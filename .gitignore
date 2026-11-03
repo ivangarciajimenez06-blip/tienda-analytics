@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Entorno y editor
+.venv/
+.idea/
+.ipynb_checkpoints/
+
+# Datos generados (se pueden regenerar con src/generar_datos.py)
+data/raw/*
+data/processed/*
+!data/**/.gitkeep
