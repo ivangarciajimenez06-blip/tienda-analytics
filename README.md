@@ -3,7 +3,7 @@
 Sistema de analítica para una tienda online: base de datos relacional,
 limpieza de datos, modelos de Machine Learning y cuadro de mando.
 
-> Proyecto en desarrollo · Datos simulados con Faker
+> 🚧 Proyecto en desarrollo · Datos simulados con Faker
 
 ## Preguntas de negocio
 
@@ -29,6 +29,11 @@ Python · SQLite · pandas · scikit-learn · seaborn · Power BI · Streamlit
 
 ## Cómo ejecutarlo
 
-    python -m venv .venv
-    .venv\Scripts\activate
-    pip install -r requirements.txt
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+## Modelo de datos
+
+![Modelo E/R](sql/modelo_er.png)
