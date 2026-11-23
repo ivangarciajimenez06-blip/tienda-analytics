@@ -45,3 +45,15 @@ python src/limpieza.py        # limpia, carga data/processed/tienda.db y escribe
 ## Modelo de datos
 
 ![Modelo E/R](sql/modelo_er.png)
+
+## Análisis exploratorio
+
+Notebook: [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) (consultas en SQL con `src/bd.py`).
+
+![Ingresos e inversión publicitaria por mes](docs/img/eda_ventas_mensuales.png)
+
+![Inversión publicitaria frente a ingresos](docs/img/eda_regresion.png)
+
+- **Estacionalidad:** noviembre y diciembre venden un 43,2 % más que la media del resto de meses.
+- **Publicidad:** la inversión mensual y los ingresos tienen una correlación de 0,80, también sin contar noviembre ni diciembre.
+- **Clientes:** el 10 % de los clientes que más gasta genera el 41,9 % de los ingresos.
