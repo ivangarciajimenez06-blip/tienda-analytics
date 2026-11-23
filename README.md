@@ -57,3 +57,13 @@ Notebook: [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) (consultas en SQL c
 - **Estacionalidad:** noviembre y diciembre venden un 43,2 % más que la media del resto de meses.
 - **Publicidad:** la inversión mensual y los ingresos tienen una correlación de 0,80, también sin contar noviembre ni diciembre.
 - **Clientes:** el 10 % de los clientes que más gasta genera el 41,9 % de los ingresos.
+
+## Regresión: publicidad y ventas
+
+Notebook: [`notebooks/02_regresion.ipynb`](notebooks/02_regresion.ipynb) · Modelo: `models/regresion_pedidos.joblib`
+
+![Bootstrap del efecto de la publicidad](docs/img/regresion_bootstrap.png)
+
+![Efecto de los pedidos extremos](docs/img/regresion_extremos.png)
+
+**¿Cuánto se vende por cada euro de publicidad?** Cada 100 € más traen **4,2 pedidos completados más al mes** (IC 95 %: 3,4 – 5,3), descontando la temporada de Navidad. En margen, cada euro deja **2,01 € de margen bruto** en la estimación conservadora (sin pedidos extremos). Compensa invertir más, pero solo podemos afirmarlo dentro del rango observado (1.845 – 5.209 € al mes).
