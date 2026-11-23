@@ -34,6 +34,14 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+## Cómo generar los datos
+
+```bash
+python src/generar_datos.py   # CSV sucios (con anomalías) en data/raw/
+python src/limpieza.py        # limpia, carga data/processed/tienda.db y escribe informe_calidad.md
+```
+
 ## Modelo de datos
 
 ![Modelo E/R](sql/modelo_er.png)
