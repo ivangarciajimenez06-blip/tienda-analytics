@@ -6,17 +6,19 @@
 
 - **Pedidos:** cada 100 € más de publicidad traen **4,2 pedidos completados más al mes**
   (intervalo del 95 %: 3,4 – 5,3), descontando el efecto de noviembre y diciembre.
-- **Margen:** en la estimación conservadora, cada € deja **2,01 € de margen bruto**
-  (IC 95 %: 1,61 – 2,70 €).
+- **Ingresos:** cada 100 € traen **566,5 € más de ingresos al mes** (IC 95 %: 465 – 714 €), sin
+  los pedidos por encima del percentil 99,5 del importe (sección 8.1).
+- **Margen:** con el mismo criterio, cada € deja **2,33 € de margen bruto** (IC 95 %: 1,87 – 3,01 €);
+  2,01 € en la referencia más conservadora (Q3 + 3·IQR).
 - **Límite:** solo es válido entre 1.845 € y 5.209 € de inversión al mes, el rango que hemos observado.
 
 Archivos nuevos:
 
 | Archivo | Qué es |
 |---|---|
-| `src/features.py` | `tabla_mensual()` (24 filas, una por mes) y `umbral_pedidos_extremos()` |
+| `src/features.py` | `tabla_mensual(criterio)` (24 filas, una por mes) y `umbral_pedidos_extremos(criterio)`, con `criterio="iqr"` (por defecto) o `"p995"` |
 | `notebooks/02_regresion.ipynb` | Regresión a mano, modelos, validación, bootstrap, diagnóstico y rentabilidad |
-| `models/regresion_pedidos.joblib` | El modelo final (M2) en un diccionario con sus variables y la fecha de entrenamiento |
+| `models/regresion_pedidos.joblib` | El modelo final (M2) en un diccionario con sus variables y `datos_hasta` (último mes de los datos) |
 | `docs/img/regresion_*.png` | Bootstrap, diagnóstico y efecto de los pedidos extremos |
 
 ## 1. El dataset: `tabla_mensual()`
@@ -49,10 +51,11 @@ nombre (`:umbral`), nunca pegado en el texto de la consulta.
   en `tabla.attrs["umbral_extremos"]`.
 - Los cuartiles se calculan en pandas porque SQLite no tiene función de percentiles. El resto es SQL.
 
-**Ojo (para revisar):** el umbral marca **161 pedidos (2,5 %), que suman el 18,3 % de los
-ingresos**, no solo los 2 pedidos gigantes del EDA. El importe por pedido tiene una cola larga
-natural: tres productos Premium ya pasan de 531 €. Así que "sin extremos" significa "sin los
-pedidos más grandes", no solo "sin anomalías".
+**Ojo:** el umbral marca **161 pedidos (2,5 %), que suman el 18,3 % de los ingresos**, no solo
+los 2 pedidos gigantes del EDA. El importe por pedido tiene una cola larga natural: tres productos
+Premium ya pasan de 531 €. Así que "sin extremos" significa "sin los pedidos más grandes", no solo
+"sin anomalías". Por eso Q3 + 3·IQR se queda como **referencia** y se compara con dos alternativas
+(sección 8.1). La cifra que se da de ingresos y margen usa el **percentil 99,5**.
 
 ## 2. Regresión a mano
 
@@ -105,8 +108,11 @@ depende de la suerte de qué 5 meses toquen. Por eso se usan dos evaluaciones:
 | M3 · n_pedidos | 3 canales + temporada | 0,855 | 22,0 | 22,0 | 0,766 |
 | M2 · ingresos | inversión + temporada | 0,755 | 5.072,7 € | 4.104,2 € | 0,654 |
 | M2 · ingresos sin extremos | inversión + temporada | 0,834 | 2.825,0 € | 2.680,1 € | 0,767 |
+| M2 · ingresos sin extremos P99,5 | inversión + temporada | 0,882 | 2.956,3 € | 2.368,1 € | 0,852 |
+| M2 · ingresos Huber | inversión + temporada | 0,736 | 5.242,6 € | 3.852,1 € | 0,686 |
 | M2 · margen bruto | inversión + temporada | 0,734 | 1.977,3 € | 1.801,0 € | 0,612 |
 | M2 · margen sin extremos | inversión + temporada | 0,823 | 1.219,2 € | 1.085,5 € | 0,758 |
+| M2 · margen sin extremos P99,5 | inversión + temporada | 0,867 | 1.209,5 € | 1.024,1 € | 0,830 |
 
 - **M1 exagera el efecto (5,0 pedidos por cada 100 €).** En noviembre y diciembre se invierte más
   y también se vende más por la temporada, y M1 atribuye todo a la publicidad. Es una variable
@@ -155,11 +161,55 @@ como **un** pedido. Donde sí pesan es en los euros.
 | | Por cada 100 € de publicidad | MAE LOO | R² LOO |
 |---|---:|---:|---:|
 | Ingresos (todos los pedidos) | 669,7 € | 4.104 € | 0,654 |
-| Ingresos sin extremos | 491,4 € | 2.680 € | 0,767 |
+| Ingresos sin extremos (Q3 + 3·IQR) | 491,4 € | 2.680 € | 0,767 |
 
 Los pedidos extremos son el 2,5 % de los pedidos, pero **cambian la pendiente un 26,6 %**. Sin
 ellos el modelo además predice mucho mejor. Su tamaño no depende de la publicidad, así que, si se
-dejan dentro, una parte de su valor se atribuye por casualidad a la inversión.
+dejan dentro, una parte de su valor se atribuye por casualidad a la inversión. Pero Q3 + 3·IQR
+quita también pedidos Premium normales, y esos sí los trae la publicidad.
+
+### 8.1 Dos alternativas al umbral (sección 6.1 del notebook)
+
+- **a) Percentil 99,5:** un pedido es extremo si supera 1.064,63 €, el importe que solo supera el
+  0,5 % de los pedidos. Es la misma consulta SQL con otro umbral: `tabla_mensual(criterio="p995")`.
+- **b) Regresión de Huber, sin excluir nada:** usa todos los pedidos, pero reduce el peso de los meses
+  con residuos muy grandes. Para errores pequeños funciona como mínimos cuadrados (error²) y para los
+  grandes, como el error absoluto, así que un mes raro no arrastra la recta.
+
+**Por qué estandarizar para Huber.** `HuberRegressor` decide qué es un error "grande" con una escala
+que estima a la vez que los coeficientes, y además penaliza un poco los coeficientes (`alpha`). Con
+ingresos de decenas de miles de € y una inversión de miles, eso depende de las unidades. La clase
+`HuberEscalado` del notebook estandariza X e y (media 0, desviación 1), ajusta y devuelve los
+coeficientes a euros:
+
+- pendiente en € = pendiente estandarizada × desv(y) / desv(x)
+- constante en € = media(y) + desv(y) × constante estandarizada − Σ pendiente en € × media(x)
+
+Un `assert` comprueba que la recta en euros predice lo mismo que el modelo estandarizado.
+
+| Criterio | € por cada 100 € | IC 95 % (bootstrap) | R² LOO | MAE LOO | Pedidos excluidos | % ingresos excluidos |
+|---|---:|---:|---:|---:|---:|---:|
+| Mínimos cuadrados, todos los pedidos | 669,7 € | 486 – 990 € | 0,654 | 4.104 € | 0 | 0 % |
+| Q3 + 3·IQR (referencia) | 491,4 € | 401 – 650 € | 0,767 | 2.680 € | 161 | 18,3 % |
+| **a) Percentil 99,5** | **566,5 €** | **465 – 714 €** | **0,852** | **2.368 €** | **33** | **8,0 %** |
+| b) Huber, sin excluir | 581,3 € | 414 – 988 € | 0,686 | 3.852 € | 0 | 0 % |
+
+**Cuidado al comparar R² y MAE:** cada fila que excluye pedidos se mide contra **su propio** objetivo
+(los ingresos sin esos pedidos), que es más fácil de predecir cuanto más se quita. No basta con elegir
+el mejor R²: hay que mirar también cuánto se excluye y si la pendiente coincide con otros métodos.
+
+**Cifra elegida: 566,5 € de ingresos por cada 100 € (percentil 99,5).**
+
+1. **Dos métodos distintos coinciden:** P99,5 (quita 33 pedidos) y Huber (no quita ninguno) dan
+   566,5 € y 581,3 €, un 2,6 % de diferencia. Las otras dos quedan a los lados: con todos los pedidos
+   (669,7 €) dos pedidos de más de 10.000 € inflan la recta; con Q3 + 3·IQR (491,4 €) se quitan
+   también pedidos normales y la recta se queda corta.
+2. **Excluye poco:** 33 pedidos (0,5 %) y el 8,0 % de los ingresos, frente a 161 y el 18,3 %.
+3. **Es el mejor en Leave-One-Out** (R² 0,852, MAE 2.368 €), con la precaución de arriba. En la
+   validación temporal queda cerca de Q3 + 3·IQR (MAE de 2.956 € frente a 2.825 €).
+4. **Frente a Huber:** Huber pondera menos **meses enteros** (5 de 24: 2024-11, 2025-02, 2025-05,
+   2026-06 y 2026-07), no pedidos sueltos, y su intervalo es mucho más ancho (414 – 988 €). P99,5 se
+   explica en una frase y sirve igual para el margen. Huber queda como prueba de robustez.
 
 ## 9. Rentabilidad
 
@@ -167,13 +217,18 @@ Se modela el **margen bruto directamente**, en lugar de multiplicar los ingresos
 El margen de cada mes depende de qué se vende (Electrónica Premium frente a libros), y
 `tabla_mensual()` ya calcula el coste real de cada mes. Así no hay que suponer un margen fijo.
 
-| Estimación | Margen bruto por € de publicidad | IC 95 % |
-|---|---:|---:|
-| Con todos los pedidos | 2,82 € | 2,00 – 4,24 € |
-| **Sin pedidos extremos (conservadora)** | **2,01 €** | **1,61 – 2,70 €** |
+| Estimación | Margen bruto por € de publicidad | IC 95 % | R² LOO | MAE LOO |
+|---|---:|---:|---:|---:|
+| Con todos los pedidos | 2,82 € | 2,00 – 4,24 € | 0,612 | 1.801 € |
+| Sin extremos Q3 + 3·IQR (referencia, la más conservadora) | 2,01 € | 1,61 – 2,70 € | 0,758 | 1.086 € |
+| **Sin extremos P99,5 (elegida)** | **2,33 €** | **1,87 – 3,01 €** | **0,830** | **1.024 €** |
 
-**¿Compensa invertir más?** Sí: incluso en el peor extremo del intervalo conservador, cada € vuelve
-como más de 1 € de margen. Pero con tres precauciones:
+Con el criterio de la sección 8.1, cada € de publicidad deja **2,33 € de margen bruto** (1,33 € netos).
+P99,5 quita el 8,0 % del margen; Q3 + 3·IQR quitaba el 19,0 %.
+
+**¿Compensa invertir más?** Sí, y no depende del criterio: incluso con la referencia más conservadora,
+el peor extremo del intervalo (1,61 €) supera 1 €, y en ningún remuestreo baja de 1 €. Pero con tres
+precauciones:
 
 1. Solo es válido entre **1.845 € y 5.209 €** al mes. Una recta no puede ver rendimientos
    decrecientes: el euro número 10.000 casi seguro rinde menos que el 3.000.
@@ -202,8 +257,10 @@ validación fuera de muestra y el intervalo de confianza.
 > controlarla, el efecto salía inflado. El resultado es que cada 100 € traen unos 4,2 pedidos más al
 > mes, con un intervalo del 95 % por bootstrap de 3,4 a 5,3. Lo validé fuera de muestra con
 > Leave-One-Out y con una validación temporal: el error medio es de unos 20 pedidos al mes, un 7 %.
-> En margen, cada euro deja unos 2 € de margen bruto en la estimación conservadora, quitando los
-> pedidos excepcionalmente grandes, que movían la pendiente un 27 %. Así que compensa invertir,
+> En euros, cada 100 € traen unos 570 € de ingresos y cada euro deja unos 2,3 € de margen bruto.
+> Para llegar a esa cifra quité el 0,5 % de pedidos más grandes, y lo comprobé con una regresión
+> robusta de Huber que no quita nada y da casi lo mismo. Un criterio más agresivo, el de Tukey,
+> quitaba el 18 % de los ingresos y rebajaba el efecto a 490 €. Así que compensa invertir,
 > pero solo puedo afirmarlo en el rango observado, de unos 1.800 a 5.200 € al mes, y es una
 > correlación: para confirmar que es causa propondría un experimento variando la inversión."
 
@@ -212,7 +269,7 @@ validación fuera de muestra y el intervalo de confianza.
 1. **Margen modelado directamente** (no ingresos × margen medio). Motivo en la sección 9.
 2. **He añadido `margen_sin_extremos`** a `tabla_mensual()`. No se pedía, pero la sección 6 mostró
    que los extremos inflan la pendiente, así que la respuesta de rentabilidad necesitaba una
-   versión conservadora.
+   versión conservadora. Con `criterio="p995"` la misma columna usa el percentil 99,5.
 3. **El valor esperado de la validación se ajusta** por limpieza y por pedidos completados (sección
    10). Para la proporción de pedidos que sobreviven a la limpieza se lee `data/raw/pedidos.csv`
    (no es un archivo `_verdad_`).
@@ -220,7 +277,37 @@ validación fuera de muestra y el intervalo de confianza.
    alta.** Es lo que toca con el reparto 18 + 6 pedido; LOO sí la cubre.
 5. **Residuos por mes:** como todos los meses tienen algún pedido extremo (de 2 a 14), se marcan
    los 3 meses con más.
-6. **El `.joblib` sí se sube a git** (es pequeño y es el "entregable" del modelo). Lleva la
-   `fecha_entrenamiento`, así que cambia cada vez que se ejecuta el notebook.
+6. **El `.joblib` sí se sube a git** (es pequeño y es el "entregable" del modelo). Guarda
+   `datos_hasta` (el último mes de `tabla_mensual()`, ahora `2026-10`) en lugar de la fecha de
+   entrenamiento: con los mismos datos, el archivo es idéntico byte a byte entre ejecuciones.
 7. **Rectas de la sección 6 dibujadas para temporada baja** (`temporada_alta = 0`): M2 tiene dos
    rectas paralelas (baja y alta) y con una por modelo el gráfico se lee mejor.
+8. **`criterio` como parámetro de `tabla_mensual()`**, con `"iqr"` por defecto: así el código que ya
+   usaba la tabla no cambia y el P99,5 reutiliza la misma consulta SQL.
+9. **IC por bootstrap también para Huber y las otras alternativas**, aunque no se pedía: sin intervalo
+   no se ve que Huber es mucho menos preciso (414 – 988 €).
+10. **Huber con la `epsilon` por defecto (1,35)**, el valor estándar. Con 24 datos no hay suficientes
+    para ajustarla sin sobreajustar.
+11. **La cifra de pedidos (4,2 por cada 100 €) no cambia:** un pedido enorme cuenta como un pedido, así
+    que el criterio de extremos solo afecta a los euros.
+12. **Imágenes deterministas:** `savefig(..., metadata={"Software": None})` en los dos notebooks, y
+    `seed=42` en el `sns.regplot` del EDA. Ese `regplot` calcula su banda de confianza con un bootstrap
+    aleatorio, y era el que hacía cambiar `eda_regresion.png` en cada ejecución. El resto ya era
+    estable.
+
+## 13. Verificaciones (vueltas a pasar)
+
+| Comprobación | Resultado |
+|---|---|
+| `generar_datos.py` y `limpieza.py` | Sin errores; CSV e `informe_calidad.md` con la misma huella MD5 |
+| Pedidos sin cliente / líneas sin pedido / líneas sin producto | 0 / 0 / 0 |
+| Emails repetidos, fechas inválidas, `PRAGMA foreign_key_check` | 0 |
+| Estados distintos | cancelado, completado, devuelto |
+| Anomalías de `_verdad_anomalias.csv` en la BD | 79 / 79 (100 %) |
+| `01_eda` y `02_regresion` ejecutados con `nbconvert` | Sin errores (incluidos los `assert`) |
+| Hash MD5 de los 7 PNG de `docs/img/` tras dos ejecuciones | Idéntico |
+| Hash MD5 de `models/regresion_pedidos.joblib` tras dos ejecuciones | Idéntico (`e9b38a3b…`) y sin fecha dentro |
+
+Nota: el **archivo** `tienda.db` cambia de MD5 en cada ejecución de `limpieza.py`, pero su
+**contenido** (volcado con `iterdump`) es idéntico. La diferencia está en los bytes internos de SQLite,
+no en los datos. La BD no se sube a git.

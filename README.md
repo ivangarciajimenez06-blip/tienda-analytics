@@ -66,4 +66,23 @@ Notebook: [`notebooks/02_regresion.ipynb`](notebooks/02_regresion.ipynb) · Mode
 
 ![Efecto de los pedidos extremos](docs/img/regresion_extremos.png)
 
-**¿Cuánto se vende por cada euro de publicidad?** Cada 100 € más traen **4,2 pedidos completados más al mes** (IC 95 %: 3,4 – 5,3), descontando la temporada de Navidad. En margen, cada euro deja **2,01 € de margen bruto** en la estimación conservadora (sin pedidos extremos). Compensa invertir más, pero solo podemos afirmarlo dentro del rango observado (1.845 – 5.209 € al mes).
+**¿Cuánto se vende por cada euro de publicidad?** Descontando la temporada de Navidad, cada 100 € más de publicidad traen:
+
+- **4,2 pedidos completados más al mes** (IC 95 %: 3,4 – 5,3).
+- **566,5 € más de ingresos al mes** (IC 95 %: 465 – 714 €), sin contar los pedidos por encima del percentil 99,5 del importe (33 pedidos, el 8,0 % de los ingresos).
+- **233 € más de margen bruto**, es decir, **2,33 € de margen por cada euro invertido** (IC 95 %: 1,87 – 3,01 €).
+
+**Por qué 566,5 € y no otra cifra:** la cifra depende de cómo se traten los pedidos enormes, así que se compararon cuatro criterios (sección 6.1 del notebook):
+
+| Criterio | € por cada 100 € | Pedidos excluidos | % ingresos excluidos |
+|---|---:|---:|---:|
+| Todos los pedidos | 669,7 € | 0 | 0 % |
+| Q3 + 3·IQR (referencia) | 491,4 € | 161 | 18,3 % |
+| **Percentil 99,5 (elegido)** | **566,5 €** | **33** | **8,0 %** |
+| Huber, sin excluir nada | 581,3 € | 0 | 0 % |
+
+Con todos los pedidos, dos pedidos de más de 10.000 € inflan la recta. Q3 + 3·IQR va demasiado lejos: quita también pedidos Premium normales que la publicidad sí trae. El percentil 99,5 y la regresión de Huber, que no excluye ningún pedido, coinciden (566,5 € y 581,3 €). Se elige el percentil 99,5 porque además excluye poco, es el mejor en Leave-One-Out y se aplica igual al margen. Con la referencia más conservadora (Q3 + 3·IQR), el margen sería de 2,01 € por euro.
+
+Compensa invertir más con cualquiera de los criterios, pero solo podemos afirmarlo dentro del rango observado (1.845 – 5.209 € al mes).
+
+El modelo y las imágenes son reproducibles: con los mismos datos, `models/regresion_pedidos.joblib` (que guarda `datos_hasta`, no la fecha de ejecución) y los PNG de `docs/img/` son idénticos byte a byte entre ejecuciones.
