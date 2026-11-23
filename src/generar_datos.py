@@ -1,6 +1,7 @@
 """ Genera los datos simulados de la tienda online
 Paso 1: tablas maestras(categorias, proveedores, productos, clientes).
 Paso 2: campanas, pedidos y detalle_pedido.
+Paso 3: anomalías (guardadas en _verdad_anomalias.csv) y suciedad en los CSV.
 Los CSV se guardan en data/raw/.
 """
 from pathlib import Path
@@ -180,6 +181,158 @@ def generar_detalle(pedidos: pd.DataFrame, productos: pd.DataFrame) -> pd.DataFr
             })
     return pd.DataFrame(filas)
 
+# ---------------------------------------------------------------
+# Paso 3a: anomalías (pedidos válidos pero raros, para Isolation Forest)
+# ---------------------------------------------------------------
+Porcentaje_anomalias= 0.01
+Tipos_anomalia= ["cantidad_enorme", "precio_anomalo", "muchas_lineas"]
+
+def plantar_anomalias(pedidos: pd.DataFrame, detalle: pd.DataFrame,
+                      productos: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Modifica ~1 % de los pedidos para que sean raros y devuelve (detalle, verdad).
+
+    Todas las anomalías cumplen el esquema (cantidad > 0, precio > 0, sin productos
+    repetidos en un pedido): son pedidos posibles, no errores de formato.
+    """
+    detalle= detalle.copy()
+    precio_de= productos.set_index("id_producto")["precio"]
+    n= round(len(pedidos) * Porcentaje_anomalias)
+    elegidos= rng.choice(pedidos["id_pedido"], size=n, replace=False)
+    tipos= rng.choice(Tipos_anomalia, size=n)
+    nuevas_lineas= []
+
+    for id_pedido, tipo in zip(elegidos, tipos):
+        lineas= detalle.index[detalle["id_pedido"] == id_pedido]
+        linea= rng.choice(lineas)  # la línea que se vuelve rara
+        if tipo == "cantidad_enorme":
+            # Un pedido normal lleva 1-5 unidades por línea
+            detalle.loc[linea, "cantidad"]= int(rng.integers(20, 61))
+        elif tipo == "precio_anomalo":
+            # Precio x5-x10 o x0,1-x0,2 respecto al de catálogo (nunca 0)
+            if rng.random() < 0.5:
+                factor= rng.uniform(5, 10)
+            else:
+                factor= rng.uniform(0.1, 0.2)
+            precio= precio_de[detalle.loc[linea, "id_producto"]]
+            detalle.loc[linea, "precio_unitario"]= max(round(precio * factor, 2), 0.01)
+        else:  # muchas_lineas: un pedido normal lleva 1-4 líneas
+            ya_tiene= set(detalle.loc[lineas, "id_producto"])
+            disponibles= [p for p in productos["id_producto"] if p not in ya_tiene]
+            extra= int(rng.integers(8, 13)) - len(lineas)
+            for id_producto in rng.choice(disponibles, size=extra, replace=False):
+                nuevas_lineas.append({
+                    "id_pedido": int(id_pedido),
+                    "id_producto": int(id_producto),
+                    "cantidad": int(rng.choice(list(Unidades_por_linea), p=list(Unidades_por_linea.values()))),
+                    "precio_unitario": float(precio_de[id_producto]),
+                })
+
+    # Las líneas nuevas se colocan junto a las de su pedido
+    detalle= (pd.concat([detalle, pd.DataFrame(nuevas_lineas)], ignore_index=True)
+                .sort_values("id_pedido", kind="stable").reset_index(drop=True))
+    verdad= (pd.DataFrame({"id_pedido": elegidos.astype(int), "tipo_anomalia": tipos})
+               .sort_values("id_pedido").reset_index(drop=True))
+    return detalle, verdad
+
+# ---------------------------------------------------------------
+# Paso 3b: suciedad (errores típicos de un sistema mal mantenido)
+# ---------------------------------------------------------------
+# Cada tipo de problema afecta a entre el 1 % y el 3 % de las filas.
+Suciedad_min, Suciedad_max= 0.01, 0.03
+
+def elegir_filas(candidatas, usadas: set) -> list:
+    """Elige entre el 1 % y el 3 % de las filas candidatas que aún no tengan otro problema.
+
+    Usar filas distintas para cada problema hace que cada error se pueda contar
+    y arreglar por separado en la limpieza.
+    """
+    libres= [i for i in candidatas if i not in usadas]
+    n= round(len(candidatas) * rng.uniform(Suciedad_min, Suciedad_max))
+    elegidas= sorted(rng.choice(libres, size=n, replace=False).tolist())
+    usadas.update(elegidas)
+    return elegidas
+
+def duplicar_filas(df: pd.DataFrame, usadas: set) -> pd.DataFrame:
+    """Añade copias exactas de algunas filas, justo debajo de la original."""
+    copias= elegir_filas(df.index, usadas)
+    return pd.concat([df, df.loc[copias]]).sort_index(kind="stable").reset_index(drop=True)
+
+def fecha_formato_europeo(fechas: pd.Series) -> pd.Series:
+    """'2025-03-05' -> '05/03/2025' (la misma fecha, otro formato)."""
+    return pd.to_datetime(fechas).dt.strftime("%d/%m/%Y")
+
+def fechas_imposibles(n: int) -> list[str]:
+    """Fechas con mes y día que no existen, como '2025-13-45'."""
+    return [f"{rng.integers(2024, 2027)}-{rng.integers(13, 20)}-{rng.integers(32, 46)}" for _ in range(n)]
+
+def ensuciar_clientes(clientes: pd.DataFrame, protegidos: set) -> pd.DataFrame:
+    """protegidos: clientes con pedidos anómalos; no reciben errores irrecuperables."""
+    df= clientes.copy()
+    usadas= set()
+    no_protegidas= df.index[~df["id_cliente"].isin(protegidos)]
+
+    filas= elegir_filas(no_protegidas, usadas)
+    df.loc[filas, "email"]= None                                   # nulo en obligatoria
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "email"]= df.loc[filas, "email"].str.upper()     # email en mayúsculas
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "ciudad"]= df.loc[filas, "ciudad"].str.lower()   # ciudad en minúsculas
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "fecha_alta"]= fecha_formato_europeo(df.loc[filas, "fecha_alta"])
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "fecha_alta"]= fechas_imposibles(len(filas))
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "fecha_alta"]= ""                                # texto vacío
+
+    return duplicar_filas(df, usadas)
+
+Variantes_estado= {"completado": [" Completado", "COMPLETADO", "completado "],
+                   "cancelado": [" Cancelado", "CANCELADO"],
+                   "devuelto": ["DEVUELTO ", " Devuelto"]}
+
+def ensuciar_pedidos(pedidos: pd.DataFrame, protegidos: set) -> pd.DataFrame:
+    """protegidos: pedidos anómalos; no reciben errores irrecuperables."""
+    df= pedidos.copy()
+    # Int64 (con mayúscula) es el entero de pandas que admite nulos; pandas 3 no deja
+    # meter un nulo en una columna int64 normal, y así tampoco se escribe "468.0" en el CSV
+    df["id_cliente"]= df["id_cliente"].astype("Int64")
+    usadas= set()
+    no_protegidas= df.index[~df["id_pedido"].isin(protegidos)]
+
+    filas= elegir_filas(no_protegidas, usadas)
+    df.loc[filas, "id_cliente"]= pd.NA                             # nulo en obligatoria
+    filas= elegir_filas(no_protegidas, usadas)
+    df.loc[filas, "fecha_pedido"]= None                            # nulo en obligatoria
+    filas= elegir_filas(no_protegidas, usadas)
+    df.loc[filas, "fecha_pedido"]= fechas_imposibles(len(filas))
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "fecha_pedido"]= fecha_formato_europeo(df.loc[filas, "fecha_pedido"])
+    filas= elegir_filas(df.index, usadas)
+    # El estado mal escrito sigue siendo el mismo estado (solo cambian mayúsculas y espacios)
+    df.loc[filas, "estado"]= [rng.choice(Variantes_estado[e]) for e in df.loc[filas, "estado"]]
+
+    return duplicar_filas(df, usadas)
+
+def ensuciar_detalle(detalle: pd.DataFrame) -> pd.DataFrame:
+    """Añade total_linea (como en una exportación real) y estropea algunas filas."""
+    df= detalle.copy()
+    # total_linea se calcula ANTES de estropear nada: es el valor "bueno" de referencia
+    df["total_linea"]= (df["cantidad"] * df["precio_unitario"]).round(2)
+    df["cantidad"]= df["cantidad"].astype("Int64")  # entero que admite nulos (ver ensuciar_pedidos)
+    usadas= set()
+
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "cantidad"]= pd.NA                               # nulo en obligatoria
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "precio_unitario"]= None                         # nulo en obligatoria
+    filas= elegir_filas(df.index, usadas)
+    df.loc[filas, "cantidad"]= -df.loc[filas, "cantidad"]          # cantidad negativa
+    filas= elegir_filas(df.index, usadas)
+    # total_linea incoherente: no coincide con cantidad x precio_unitario
+    df.loc[filas, "total_linea"]= (df.loc[filas, "total_linea"] * rng.uniform(1.1, 3.0, size=len(filas))).round(2)
+
+    return duplicar_filas(df, usadas)
+
 #Programa principal
 def guardar(df: pd.DataFrame, nombre: str) -> None:
     ruta= carpeta_raw / f"{nombre}.csv"
@@ -198,6 +351,16 @@ def main() -> None:
     pedidos= generar_pedidos(clientes, verdad_clientes, campanas)
     detalle= generar_detalle(pedidos, productos)
 
+    # Orden importante: 1) datos limpios, 2) anomalías, 3) suciedad.
+    # Las anomalías se plantan sobre datos limpios y la suciedad va al final,
+    # igual que en la vida real: el pedido raro existe y luego la exportación lo estropea.
+    detalle, verdad_anomalias= plantar_anomalias(pedidos, detalle, productos)
+    pedidos_anomalos= set(verdad_anomalias["id_pedido"])
+    clientes_anomalos= set(pedidos.loc[pedidos["id_pedido"].isin(pedidos_anomalos), "id_cliente"])
+    clientes= ensuciar_clientes(clientes, clientes_anomalos)
+    pedidos= ensuciar_pedidos(pedidos, pedidos_anomalos)
+    detalle= ensuciar_detalle(detalle)
+
     guardar(categorias, "categorias")
     guardar(productos, "productos")
     guardar(clientes, "clientes")
@@ -206,6 +369,7 @@ def main() -> None:
     guardar(campanas, "campanas")
     guardar(pedidos, "pedidos")
     guardar(detalle, "detalle_pedido")
+    guardar(verdad_anomalias, "_verdad_anomalias")
 
 if __name__ == "__main__":
     main()
