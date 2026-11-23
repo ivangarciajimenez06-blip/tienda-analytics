@@ -5,6 +5,8 @@ S6: tabla_mensual() -> una fila por mes con inversión publicitaria y ventas,
 
 Uso:
     from features import tabla_mensual, umbral_pedidos_extremos
+    tabla_mensual()                   # pedidos extremos según Q3 + 3·IQR (referencia)
+    tabla_mensual(criterio="p995")    # pedidos extremos según el percentil 99,5
 """
 import pandas as pd
 
@@ -15,6 +17,13 @@ from bd import leer_sql
 # tiene una cola larga natural: con 1,5 saldrían cientos de pedidos normales. Con 3
 # solo se marcan los realmente desproporcionados (el criterio de "outlier extremo" de Tukey).
 K_IQR = 3
+
+# Criterio alternativo, más estricto: un pedido es "extremo" si supera el percentil 99,5 del
+# importe por pedido (el 0,5 % más grande). Q3 + 3·IQR marca 161 pedidos que suman el 18,3 %
+# de los ingresos, muchos de ellos pedidos Premium normales; el P99,5 se queda con los
+# realmente excepcionales. Ver notebooks/02_regresion.ipynb, sección 6.
+PERCENTIL_ESTRICTO = 0.995
+CRITERIOS_EXTREMOS = ("iqr", "p995")
 
 # Importe de cada pedido completado. Se reutiliza en las dos funciones.
 CONSULTA_IMPORTE_POR_PEDIDO = """
@@ -31,23 +40,34 @@ GROUP BY p.id_pedido
 """
 
 
-def umbral_pedidos_extremos() -> dict:
-    """Calcula Q1, Q3, IQR y el umbral Q3 + 3·IQR sobre TODOS los pedidos completados.
+def umbral_pedidos_extremos(criterio: str = "iqr") -> dict:
+    """Umbral de pedido extremo calculado sobre TODOS los pedidos completados.
 
-    Los cuartiles se calculan en pandas porque SQLite no tiene función de percentiles.
-    Devuelve un diccionario para poder mostrar y guardar cada valor.
+    criterio="iqr"  -> Q3 + 3·IQR (referencia)
+    criterio="p995" -> percentil 99,5 del importe por pedido (más estricto)
+
+    Los cuartiles y percentiles se calculan en pandas porque SQLite no tiene función de
+    percentiles. Devuelve un diccionario para poder mostrar y guardar cada valor.
     """
+    if criterio not in CRITERIOS_EXTREMOS:
+        raise ValueError(f"criterio debe ser uno de {CRITERIOS_EXTREMOS}, no {criterio!r}")
     importes = leer_sql(CONSULTA_IMPORTE_POR_PEDIDO)["importe"]
     q1, q3 = importes.quantile([0.25, 0.75])
     iqr = q3 - q1
-    umbral = q3 + K_IQR * iqr
+    if criterio == "iqr":
+        umbral = q3 + K_IQR * iqr
+    else:
+        umbral = float(importes.quantile(PERCENTIL_ESTRICTO))
+    extremos = importes > umbral
     return {
+        "criterio": criterio,
         "q1": round(q1, 2),
         "q3": round(q3, 2),
         "iqr": round(iqr, 2),
         "umbral": round(umbral, 2),
         "n_pedidos": int(len(importes)),
-        "n_extremos": int((importes > umbral).sum()),
+        "n_extremos": int(extremos.sum()),
+        "pct_ingresos_extremos": round(float(100 * importes[extremos].sum() / importes.sum()), 2),
     }
 
 
@@ -105,16 +125,20 @@ ORDER BY i.mes
 """
 
 
-def tabla_mensual() -> pd.DataFrame:
+def tabla_mensual(criterio: str = "iqr") -> pd.DataFrame:
     """Una fila por mes (24) con inversión, pedidos, ingresos, margen y pedidos extremos.
 
     margen_sin_extremos se añade para estimar la rentabilidad sin depender de unos pocos
     pedidos enormes (ver notebooks/02_regresion.ipynb, sección 7).
 
+    criterio elige qué es un pedido extremo ("iqr" por defecto o "p995", ver
+    umbral_pedidos_extremos). Las columnas *_sin_extremos y n_pedidos_extremos usan ese
+    criterio; el resto no cambia.
+
     Solo cuentan los pedidos completados. El umbral de pedidos extremos usado se guarda
     en tabla.attrs["umbral_extremos"] para poder consultarlo después.
     """
-    umbral = umbral_pedidos_extremos()
+    umbral = umbral_pedidos_extremos(criterio)
     tabla = leer_sql(CONSULTA_TABLA_MENSUAL, params={"umbral": umbral["umbral"]})
     tabla.attrs["umbral_extremos"] = umbral
     return tabla
