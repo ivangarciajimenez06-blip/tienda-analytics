@@ -86,3 +86,23 @@ Con todos los pedidos, dos pedidos de más de 10.000 € inflan la recta. Q3 + 3
 Compensa invertir más con cualquiera de los criterios, pero solo podemos afirmarlo dentro del rango observado (1.845 – 5.209 € al mes).
 
 El modelo y las imágenes son reproducibles: con los mismos datos, `models/regresion_pedidos.joblib` (que guarda `datos_hasta`, no la fecha de ejecución) y los PNG de `docs/img/` son idénticos byte a byte entre ejecuciones.
+## Segmentación de clientes
+
+Notebook: [`notebooks/03_segmentacion.ipynb`](notebooks/03_segmentacion.ipynb) · Modelo: `models/segmentacion_kmeans.joblib` · Explicación: [`docs/explicacion_s7.md`](docs/explicacion_s7.md)
+
+Variables RFM por cliente (`tabla_rfm()` en `src/features.py`): **recencia** (días desde el último pedido completado), **frecuencia** (nº de pedidos completados) y **monetario** (gasto total). Se transforman con `log1p` (frecuencia y monetario) y `StandardScaler`, y se agrupan con K-Means. Se eligió **k = 4** con el codo, la silueta (0,439) y Davies-Bouldin (0,800, el mínimo entre k = 2 y 10).
+
+![Peso de cada segmento: % de clientes frente a % de ingresos](docs/img/segmentacion_clientes_ingresos.png)
+
+![Segmentos en 2D con PCA](docs/img/segmentacion_pca.png)
+
+**¿Qué tipos de clientes hay?** Cuatro:
+
+| Segmento | % clientes | % ingresos | Perfil (medianas) |
+|---|---:|---:|---|
+| **Fieles** | 26,8 % | 66,4 % | 28 pedidos, último hace 14 días, 3.737,7 € |
+| **Habituales** | 43,0 % | 24,2 % | 7 pedidos, último hace 42 días, 878,4 € |
+| **Compra única** | 15,6 % | 1,1 % | 1 pedido, hace 292 días, 109,3 € |
+| **Perdidos** | 14,6 % | 8,3 % | 4 pedidos, el último hace 580 días, 550,7 € |
+
+Un cuarto de los clientes genera dos tercios de los ingresos. Los segmentos se distinguen por cuántas veces compran y cuándo fue la última vez, no por el gasto por pedido, que es parecido. El jerárquico (ward) coincide a medias con K-Means (ARI 0,481) y DBSCAN solo encuentra un grupo: los clientes forman un continuo, sin grupos densos separados. Con los datos simulados se pudo comparar con el tipo real de cada cliente: coincide en un 79,1 % (ARI 0,405).
