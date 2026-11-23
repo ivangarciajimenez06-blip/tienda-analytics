@@ -66,6 +66,7 @@ ventas_mes AS (
         SUM(importe)                                        AS ingresos,
         SUM(coste)                                          AS coste_productos,
         SUM(CASE WHEN importe > :umbral THEN 0 ELSE importe END) AS ingresos_sin_extremos,
+        SUM(CASE WHEN importe > :umbral THEN 0 ELSE importe - coste END) AS margen_sin_extremos,
         SUM(CASE WHEN importe > :umbral THEN 1 ELSE 0 END)       AS n_pedidos_extremos
     FROM importe_pedido
     GROUP BY mes
@@ -96,6 +97,7 @@ SELECT
     v.coste_productos,
     v.ingresos - v.coste_productos                                  AS margen_bruto,
     v.ingresos_sin_extremos,
+    v.margen_sin_extremos,
     v.n_pedidos_extremos
 FROM inversion_mes AS i
     LEFT JOIN ventas_mes AS v ON v.mes = i.mes
@@ -105,6 +107,9 @@ ORDER BY i.mes
 
 def tabla_mensual() -> pd.DataFrame:
     """Una fila por mes (24) con inversión, pedidos, ingresos, margen y pedidos extremos.
+
+    margen_sin_extremos se añade para estimar la rentabilidad sin depender de unos pocos
+    pedidos enormes (ver notebooks/02_regresion.ipynb, sección 7).
 
     Solo cuentan los pedidos completados. El umbral de pedidos extremos usado se guarda
     en tabla.attrs["umbral_extremos"] para poder consultarlo después.
