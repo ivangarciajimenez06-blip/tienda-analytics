@@ -1,5 +1,6 @@
 """ Genera los datos simulados de la tienda online
 Paso 1: tablas maestras(categorias, proveedores, productos, clientes).
+Paso 2: campanas, pedidos y detalle_pedido.
 Los CSV se guardan en data/raw/.
 """
 from pathlib import Path
@@ -150,6 +151,35 @@ def generar_pedidos(clientes: pd.DataFrame, verdad:pd.DataFrame, campanas: pd.Da
             fecha= max(inicio + pd.Timedelta(days= int(dia)), pd.Timestamp(alta[id_cliente -1]))
             filas.append({"id_cliente": int(id_cliente), "fecha_pedido": fecha.strftime("%Y-%m-%d")})
 
+    # 4) Ordenar por fecha y numerar: así id_pedido crece con el tiempo, como en una tienda real
+    pedidos= pd.DataFrame(filas).sort_values("fecha_pedido", kind="stable").reset_index(drop=True)
+    pedidos.insert(0, "id_pedido", range(1, len(pedidos) + 1))
+    pedidos["estado"]= rng.choice(list(Estados), size=len(pedidos), p=list(Estados.values()))
+    pedidos["metodo_pago"]= rng.choice(list(Metodos_pago), size=len(pedidos), p=list(Metodos_pago.values()))
+    return pedidos
+
+#Líneas por pedido y unidades por línea en un pedido normal
+Lineas_por_pedido= {1: 0.60, 2: 0.25, 3: 0.10, 4: 0.05}
+Unidades_por_linea= {1: 0.60, 2: 0.25, 3: 0.10, 4: 0.03, 5: 0.02}
+
+def generar_detalle(pedidos: pd.DataFrame, productos: pd.DataFrame) -> pd.DataFrame:
+    """Crea las líneas de cada pedido: qué productos, cuántas unidades y a qué precio."""
+    precio_de= productos.set_index("id_producto")["precio"]
+    n_lineas= rng.choice(list(Lineas_por_pedido), size=len(pedidos), p=list(Lineas_por_pedido.values()))
+    filas= []
+    for id_pedido, n in zip(pedidos["id_pedido"], n_lineas):
+        # replace=False: un producto no se repite dentro del mismo pedido (es la clave primaria)
+        elegidos= rng.choice(productos["id_producto"], size=n, replace=False)
+        cantidades= rng.choice(list(Unidades_por_linea), size=n, p=list(Unidades_por_linea.values()))
+        for id_producto, cantidad in zip(elegidos, cantidades):
+            filas.append({
+                "id_pedido": int(id_pedido),
+                "id_producto": int(id_producto),
+                "cantidad": int(cantidad),
+                "precio_unitario": float(precio_de[id_producto]),  # se vende al precio de catálogo
+            })
+    return pd.DataFrame(filas)
+
 #Programa principal
 def guardar(df: pd.DataFrame, nombre: str) -> None:
     ruta= carpeta_raw / f"{nombre}.csv"
@@ -164,12 +194,18 @@ def main() -> None:
     proveedores= generar_proveedores()
     productos= generar_productos(categorias, proveedores)
     clientes, verdad_clientes= generar_clientes()
+    campanas= generar_campanas()
+    pedidos= generar_pedidos(clientes, verdad_clientes, campanas)
+    detalle= generar_detalle(pedidos, productos)
 
     guardar(categorias, "categorias")
     guardar(productos, "productos")
     guardar(clientes, "clientes")
     guardar(verdad_clientes, "_verdad_clientes")
     guardar(proveedores, "proveedores")
+    guardar(campanas, "campanas")
+    guardar(pedidos, "pedidos")
+    guardar(detalle, "detalle_pedido")
 
 if __name__ == "__main__":
     main()
