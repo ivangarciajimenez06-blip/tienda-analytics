@@ -6,11 +6,15 @@ S6: tabla_mensual() -> una fila por mes con inversión publicitaria y ventas,
 S7: tabla_rfm() -> una fila por cliente con recencia, frecuencia y valor monetario (RFM),
     el dataset de la segmentación "¿qué tipos de clientes hay?".
 
+S8: tabla_pedidos() -> una fila por pedido con importe, líneas, unidades y ratios de precio,
+    el dataset de la detección de anomalías "¿qué pedidos son sospechosos?".
+
 Uso:
-    from features import tabla_mensual, umbral_pedidos_extremos, tabla_rfm
+    from features import tabla_mensual, umbral_pedidos_extremos, tabla_rfm, tabla_pedidos
     tabla_mensual()                   # pedidos extremos según Q3 + 3·IQR (referencia)
     tabla_mensual(criterio="p995")    # pedidos extremos según el percentil 99,5
     tabla_rfm()                       # RFM de los clientes con al menos un pedido completado
+    tabla_pedidos()                   # variables por pedido, todos los estados
 """
 import pandas as pd
 
@@ -242,4 +246,80 @@ def tabla_rfm() -> pd.DataFrame:
     tabla = leer_sql(CONSULTA_RFM)
     tabla.attrs["fecha_corte"] = fecha_corte()
     tabla.attrs["n_clientes_sin_compras"] = len(clientes_sin_compras())
+    return tabla
+
+
+# ---------------------------------------------------------------------------------------
+# S8 · Detección de pedidos anómalos
+# ---------------------------------------------------------------------------------------
+
+CONSULTA_PEDIDOS = """
+WITH
+-- 1) Una fila por línea, con su importe y con el ratio entre el precio cobrado y el de catálogo.
+--    ratio_precio = 1 significa "se vendió al precio de catálogo"; 5 es cinco veces más caro y
+--    0,1 es un 90 % más barato. Al dividir, el ratio no depende de si el producto es caro o barato,
+--    así que un auricular de 200 € y un libro de 10 € se pueden comparar en la misma escala.
+linea AS (
+    SELECT
+        d.id_pedido,
+        d.cantidad,
+        d.cantidad * d.precio_unitario    AS importe_linea,
+        d.precio_unitario / pr.precio     AS ratio_precio
+    FROM detalle_pedido AS d
+        JOIN productos AS pr ON pr.id_producto = d.id_producto
+),
+-- 2) Resumen por pedido. Se guardan el máximo y el mínimo del ratio (y no la media) porque
+--    basta UNA línea con un precio raro para que el pedido sea sospechoso, y con la media esa
+--    línea quedaría diluida entre las normales.
+por_pedido AS (
+    SELECT
+        id_pedido,
+        SUM(importe_linea)   AS importe_total,
+        COUNT(*)             AS n_lineas,
+        SUM(cantidad)        AS unidades_totales,
+        MAX(cantidad)        AS max_cantidad_linea,
+        MAX(ratio_precio)    AS ratio_precio_max,
+        MIN(ratio_precio)    AS ratio_precio_min
+    FROM linea
+    GROUP BY id_pedido
+)
+-- 3) Se añaden los datos del pedido (para mostrar). Todos los estados: un pedido cancelado
+--    o devuelto también puede ser sospechoso (p. ej. un intento de fraude que se canceló).
+--    JOIN y no LEFT JOIN: un pedido sin líneas no tiene variables que puntuar (hay 0).
+SELECT
+    p.id_pedido,
+    p.id_cliente,
+    p.fecha_pedido,
+    p.estado,
+    p.metodo_pago,
+    v.importe_total,
+    v.n_lineas,
+    v.unidades_totales,
+    v.max_cantidad_linea,
+    v.ratio_precio_max,
+    v.ratio_precio_min,
+    v.importe_total / v.unidades_totales  AS importe_por_unidad
+FROM pedidos AS p
+    JOIN por_pedido AS v ON v.id_pedido = p.id_pedido
+ORDER BY p.id_pedido
+"""
+
+
+def tabla_pedidos() -> pd.DataFrame:
+    """Una fila por pedido (todos los estados) con las variables para detectar anomalías.
+
+    Columnas:
+        importe_total       suma de cantidad x precio_unitario de sus líneas (€)
+        n_lineas            nº de productos distintos del pedido
+        unidades_totales    suma de las cantidades
+        max_cantidad_linea  la cantidad más alta de una sola línea
+        ratio_precio_max    máximo de precio_unitario / precio de catálogo entre sus líneas
+        ratio_precio_min    mínimo de ese mismo ratio
+        importe_por_unidad  importe_total / unidades_totales (€ por unidad)
+        id_cliente, fecha_pedido, estado, metodo_pago: para mostrar, no para el modelo
+
+    fecha_pedido se devuelve como datetime.
+    """
+    tabla = leer_sql(CONSULTA_PEDIDOS)
+    tabla["fecha_pedido"] = pd.to_datetime(tabla["fecha_pedido"])
     return tabla
