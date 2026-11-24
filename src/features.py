@@ -9,12 +9,17 @@ S7: tabla_rfm() -> una fila por cliente con recencia, frecuencia y valor monetar
 S8: tabla_pedidos() -> una fila por pedido con importe, líneas, unidades y ratios de precio,
     el dataset de la detección de anomalías "¿qué pedidos son sospechosos?".
 
+S9: tabla_recompra(fecha_corte) -> una fila por cliente con variables calculadas ANTES de la
+    fecha de corte y la etiqueta "volverá a comprar en los 90 días siguientes", el dataset de
+    la predicción "¿qué clientes volverán a comprar?".
+
 Uso:
-    from features import tabla_mensual, umbral_pedidos_extremos, tabla_rfm, tabla_pedidos
+    from features import tabla_mensual, umbral_pedidos_extremos, tabla_rfm, tabla_pedidos, tabla_recompra
     tabla_mensual()                   # pedidos extremos según Q3 + 3·IQR (referencia)
     tabla_mensual(criterio="p995")    # pedidos extremos según el percentil 99,5
     tabla_rfm()                       # RFM de los clientes con al menos un pedido completado
     tabla_pedidos()                   # variables por pedido, todos los estados
+    tabla_recompra("2026-05-03")      # variables hasta el 2026-05-02 y etiqueta a 90 días
 """
 import pandas as pd
 
@@ -322,4 +327,152 @@ def tabla_pedidos() -> pd.DataFrame:
     """
     tabla = leer_sql(CONSULTA_PEDIDOS)
     tabla["fecha_pedido"] = pd.to_datetime(tabla["fecha_pedido"])
+    return tabla
+
+
+# ---------------------------------------------------------------------------------------
+# S9 · Predicción de recompra
+# ---------------------------------------------------------------------------------------
+
+# Días medios de un mes (365,25 / 12). Se usa para pasar la antigüedad de días a meses.
+DIAS_POR_MES = 30.4375
+
+# Regla de oro de esta consulta: las VARIABLES solo miran pedidos con fecha < corte (el pasado)
+# y la ETIQUETA solo mira pedidos con fecha >= corte (el futuro). Si una variable mirara un solo
+# día del futuro, el modelo "haría trampas" y en la vida real no funcionaría (fuga de información).
+# La fecha de corte y el horizonte entran como parámetros con nombre (:corte, :horizonte), nunca
+# pegados en el texto. Las fechas son texto AAAA-MM-DD, así que "<" y ">=" comparan bien.
+CONSULTA_RECOMPRA = """
+WITH
+-- 1) Las fechas que marcan las ventanas (una sola fila)
+param AS (
+    SELECT
+        :corte                                          AS corte,
+        date(:corte, '-90 days')                        AS inicio_90d,   -- últimos 90 días ANTES del corte
+        date(:corte, printf('+%d days', :horizonte))    AS fin_etiqueta  -- la etiqueta mira [corte, fin)
+),
+-- 2) Pedidos ANTERIORES al corte, de todos los estados, con su importe
+pedido_antes AS (
+    SELECT
+        p.id_pedido,
+        p.id_cliente,
+        p.fecha_pedido,
+        p.estado,
+        SUM(d.cantidad * d.precio_unitario) AS importe
+    FROM pedidos AS p
+        JOIN detalle_pedido AS d ON d.id_pedido = p.id_pedido
+        CROSS JOIN param
+    WHERE p.fecha_pedido < param.corte                   -- <- solo el pasado
+    GROUP BY p.id_pedido
+),
+-- 3) Resumen por cliente. En SQLite una comparación vale 1 o 0, así que SUM(condición) cuenta filas
+por_cliente AS (
+    SELECT
+        a.id_cliente,
+        SUM(a.estado = 'completado')                                     AS frecuencia,
+        SUM(CASE WHEN a.estado = 'completado' THEN a.importe ELSE 0 END) AS monetario,
+        MAX(CASE WHEN a.estado = 'completado' THEN a.fecha_pedido END)   AS ultimo_pedido,
+        SUM(a.estado = 'completado' AND a.fecha_pedido >= param.inicio_90d) AS pedidos_ultimos_90d,
+        COUNT(*)                                                         AS pedidos_todos_estados,
+        SUM(a.estado IN ('cancelado', 'devuelto'))                       AS pedidos_cancelados_devueltos
+    FROM pedido_antes AS a
+        CROSS JOIN param
+    GROUP BY a.id_cliente
+),
+-- 4) La etiqueta: clientes con al menos un pedido completado en [corte, corte + horizonte)
+vuelve AS (
+    SELECT DISTINCT p.id_cliente
+    FROM pedidos AS p
+        CROSS JOIN param
+    WHERE p.estado = 'completado'
+      AND p.fecha_pedido >= param.corte                   -- <- solo el futuro
+      AND p.fecha_pedido <  param.fin_etiqueta
+)
+-- 5) Una fila por cliente dado de alta antes del corte y con al menos un pedido completado antes
+--    del corte (los demás no tienen recencia ni ticket medio: ver clientes_sin_compras_antes()).
+--    MAX(x, 1.0) con dos argumentos es el mayor de los dos: un cliente con menos de un mes de
+--    antigüedad cuenta como 1 mes, para que 2 pedidos en 3 días no den "20 pedidos al mes".
+SELECT
+    c.id_cliente,
+    param.corte                                                              AS fecha_corte,
+    CAST(julianday(param.corte) - julianday(r.ultimo_pedido) AS INTEGER)    AS recencia_dias,
+    r.frecuencia,
+    r.monetario,
+    CAST(julianday(param.corte) - julianday(c.fecha_alta) AS INTEGER)       AS antiguedad_dias,
+    r.frecuencia / MAX((julianday(param.corte) - julianday(c.fecha_alta)) / :dias_mes, 1.0)
+                                                                             AS pedidos_por_mes,
+    r.monetario / r.frecuencia                                               AS ticket_medio,
+    r.pedidos_ultimos_90d,
+    100.0 * r.pedidos_cancelados_devueltos / r.pedidos_todos_estados         AS pct_cancelados_devueltos,
+    CASE WHEN v.id_cliente IS NULL THEN 0 ELSE 1 END                         AS volvera
+FROM clientes AS c
+    JOIN por_cliente    AS r ON r.id_cliente = c.id_cliente
+    CROSS JOIN param
+    LEFT JOIN vuelve    AS v ON v.id_cliente = c.id_cliente
+WHERE c.fecha_alta < param.corte
+  AND r.frecuencia > 0
+ORDER BY c.id_cliente
+"""
+
+# Clientes dados de alta antes del corte pero sin ningún pedido completado antes del corte
+CONSULTA_SIN_COMPRAS_ANTES = """
+SELECT c.id_cliente
+FROM clientes AS c
+WHERE c.fecha_alta < :corte
+  AND NOT EXISTS (
+      SELECT 1 FROM pedidos AS p
+      WHERE p.id_cliente = c.id_cliente
+        AND p.estado = 'completado'
+        AND p.fecha_pedido < :corte
+  )
+ORDER BY c.id_cliente
+"""
+
+VARIABLES_RECOMPRA = ["recencia_dias", "frecuencia", "monetario", "antiguedad_dias", "pedidos_por_mes",
+                      "ticket_medio", "pedidos_ultimos_90d", "pct_cancelados_devueltos"]
+
+
+def _validar_fecha(fecha: str) -> str:
+    """Comprueba que la fecha es AAAA-MM-DD válida y la devuelve igual (se compara como texto en SQL)."""
+    if pd.Timestamp(fecha).strftime("%Y-%m-%d") != fecha:
+        raise ValueError(f"La fecha debe tener el formato AAAA-MM-DD, no {fecha!r}")
+    return fecha
+
+
+def clientes_sin_compras_antes(fecha_corte: str) -> pd.DataFrame:
+    """id_cliente dados de alta antes del corte sin ningún pedido completado antes del corte."""
+    return leer_sql(CONSULTA_SIN_COMPRAS_ANTES, params={"corte": _validar_fecha(fecha_corte)})
+
+
+def tabla_recompra(fecha_corte: str, horizonte_dias: int = 90) -> pd.DataFrame:
+    """Una fila por cliente con variables del pasado y la etiqueta del futuro.
+
+    Variables (solo pedidos con fecha < fecha_corte; todas de pedidos completados salvo la última):
+        recencia_dias            días desde su último pedido completado hasta el corte
+        frecuencia               nº de pedidos completados
+        monetario                gasto total en pedidos completados (€)
+        antiguedad_dias          días desde su alta hasta el corte
+        pedidos_por_mes          frecuencia / meses desde el alta (mínimo 1 mes)
+        ticket_medio             monetario / frecuencia (€ por pedido)
+        pedidos_ultimos_90d      pedidos completados en los 90 días anteriores al corte
+        pct_cancelados_devueltos % de sus pedidos (todos los estados) cancelados o devueltos
+    Etiqueta (solo pedidos con fecha >= fecha_corte):
+        volvera                  1 si tiene al menos un pedido completado en
+                                 [fecha_corte, fecha_corte + horizonte_dias); si no, 0
+
+    Solo entran los clientes dados de alta antes del corte con al menos un pedido completado antes
+    del corte: sin ninguna compra no tienen recencia ni ticket medio, y la pregunta es si VOLVERÁN.
+    Se cuentan aparte con clientes_sin_compras_antes(). En tabla.attrs se guardan el corte, el
+    horizonte, el último día de la ventana de la etiqueta y ese recuento.
+    """
+    fecha_corte = _validar_fecha(fecha_corte)
+    horizonte_dias = int(horizonte_dias)
+    tabla = leer_sql(CONSULTA_RECOMPRA, params={"corte": fecha_corte, "horizonte": horizonte_dias,
+                                                "dias_mes": DIAS_POR_MES})
+    tabla["fecha_corte"] = pd.to_datetime(tabla["fecha_corte"])
+    fin = pd.Timestamp(fecha_corte) + pd.Timedelta(days=horizonte_dias)
+    tabla.attrs["fecha_corte"] = fecha_corte
+    tabla.attrs["horizonte_dias"] = horizonte_dias
+    tabla.attrs["ultimo_dia_etiqueta"] = str((fin - pd.Timedelta(days=1)).date())
+    tabla.attrs["n_sin_compras_antes"] = len(clientes_sin_compras_antes(fecha_corte))
     return tabla
