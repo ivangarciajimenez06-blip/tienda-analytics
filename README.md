@@ -110,6 +110,7 @@ Un cuarto de los clientes genera dos tercios de los ingresos. Los segmentos se d
 ### Trabajo futuro
 
 - **Frecuencia relativa en lugar de acumulada.** Usar pedidos al mes desde el alta (frecuencia ÷ antigüedad en meses) en lugar del número total de pedidos. La frecuencia acumulada no distingue "mucho tiempo comprando poco" de "poco tiempo comprando mucho": es la causa del error principal, 50 clientes ocasionales antiguos (0,74 pedidos al mes) clasificados como Fieles (2,19 al mes los fieles de verdad). La idea surgió al analizar los errores con `_verdad_clientes.csv`, así que **no se ha aplicado al modelo actual**: el modelo se eligió solo con métricas internas, y cambiarlo ahora sería elegirlo usando la verdad. Para probarlo bien habría que validarlo sin ella (silueta, Davies-Bouldin, estabilidad) o con datos nuevos.
+  - **Aplicado en la S9.** `pedidos_por_mes` se usó en la [predicción de recompra](#predicción-de-recompra), un modelo supervisado en el que la variable se eligió con validación cruzada, sin la verdad. Añadida al RFM básico, subió la ROC-AUC de validación de 0,831 a 0,858. La segmentación de la S7 sigue sin cambiar.
 
 ## Detección de pedidos anómalos
 
