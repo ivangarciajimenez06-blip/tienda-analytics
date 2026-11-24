@@ -106,3 +106,7 @@ Variables RFM por cliente (`tabla_rfm()` en `src/features.py`): **recencia** (d�
 | **Perdidos** | 14,6 % | 8,3 % | 4 pedidos, el último hace 580 días, 550,7 € |
 
 Un cuarto de los clientes genera dos tercios de los ingresos. Los segmentos se distinguen por cuántas veces compran y cuándo fue la última vez, no por el gasto por pedido, que es parecido. El jerárquico (ward) coincide a medias con K-Means (ARI 0,481) y DBSCAN solo encuentra un grupo: los clientes forman un continuo, sin grupos densos separados. Con los datos simulados se pudo comparar con el tipo real de cada cliente: coincide en un 79,1 % (ARI 0,405).
+
+### Trabajo futuro
+
+- **Frecuencia relativa en lugar de acumulada.** Usar pedidos al mes desde el alta (frecuencia ÷ antigüedad en meses) en lugar del número total de pedidos. La frecuencia acumulada no distingue "mucho tiempo comprando poco" de "poco tiempo comprando mucho": es la causa del error principal, 50 clientes ocasionales antiguos (0,74 pedidos al mes) clasificados como Fieles (2,19 al mes los fieles de verdad). La idea surgió al analizar los errores con `_verdad_clientes.csv`, así que **no se ha aplicado al modelo actual**: el modelo se eligió solo con métricas internas, y cambiarlo ahora sería elegirlo usando la verdad. Para probarlo bien habría que validarlo sin ella (silueta, Davies-Bouldin, estabilidad) o con datos nuevos.
