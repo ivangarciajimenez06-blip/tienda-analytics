@@ -140,3 +140,28 @@ Con la puntuación continua: **ROC-AUC = 0,968**, **PR-AUC = 0,762** (azar = 0,0
 ### Trabajo futuro
 
 - **Enfoque híbrido: reglas de negocio junto con el modelo.** Una regla como "precio pagado > precio de catálogo → revisar" (y lo mismo por debajo) cubriría justo las anomalías de precio que se le escapan al modelo, con muy poco trabajo extra: solo 27 pedidos (0,37 %) tienen un precio distinto del de catálogo. El modelo seguiría encargándose de las combinaciones raras que una regla no ve. La idea surgió al analizar los errores con `_verdad_anomalias.csv`, así que **no se ha aplicado**: el modelo y el umbral se eligieron sin la verdad, y cambiarlos ahora sería elegirlos usándola. Para probarlo bien habría que validarlo con datos nuevos.
+
+## Predicción de recompra
+
+Notebook: [`notebooks/05_recompra.ipynb`](notebooks/05_recompra.ipynb) · Modelo: `models/recompra_knn.joblib` · Explicación: [`docs/explicacion_s9.md`](docs/explicacion_s9.md)
+
+Para cada **fecha de corte**, `tabla_recompra()` (en `src/features.py`) calcula 8 variables por cliente **solo con los pedidos anteriores al corte** (recencia, frecuencia, gasto, antigüedad, pedidos por mes desde el alta, ticket medio, pedidos de los últimos 90 días y % de cancelados o devueltos) y la etiqueta `volvera` **solo con los 90 días siguientes**. Un test lo recalcula a mano para comprobar que ninguna variable usa el futuro. Se entrena con 4 cortes apilados (2025-05-04 a 2026-02-01, 1142 filas) y se prueba **una sola vez** con un corte posterior (2026-05-03, 418 clientes, un 55,5 % de los cuales vuelve). La validación cruzada agrupa por cliente (`StratifiedGroupKFold`), porque el mismo cliente aparece en varios cortes.
+
+![Fechas de corte: ventana de variables y ventana de la etiqueta](docs/img/recompra_cortes.png)
+
+KNN usa RFM + `pedidos_por_mes` (la frecuencia relativa a la antigüedad, que sube la ROC-AUC de validación de 0,831 a 0,858), con k = 41 y `weights="distance"`. El umbral (0,59) maximiza el F1 de "no volverá" en la validación cruzada, pensando en una campaña de retención.
+
+**Resultados en la prueba** (precision, recall y F1 de la clase "no volverá"):
+
+| Modelo | ROC-AUC | PR-AUC | Accuracy | Precision | Recall | F1 |
+|---|---:|---:|---:|---:|---:|---:|
+| Dummy (siempre "volverá") | 0,500 | 0,445 | 0,555 | 0,000 | 0,000 | 0,000 |
+| Regla: compró en los últimos 90 días | 0,729 | 0,629 | 0,737 | 0,726 | 0,656 | 0,689 |
+| Regresión logística | 0,844 | **0,841** | 0,739 | 0,671 | **0,812** | **0,735** |
+| **KNN (modelo elegido)** | **0,845** | 0,811 | **0,758** | **0,732** | 0,720 | 0,726 |
+
+![Curva ROC en la prueba y matriz de confusión de KNN](docs/img/recompra_roc_matriz.png)
+
+**KNN supera con claridad a la regla de negocio, pero no a la regresión logística**: empatan en ROC-AUC y la logística es mejor en PR-AUC y F1. La relación es sencilla (más reciente y más frecuente → más probable volver), y un modelo lineal la capta igual de bien. KNN se mantiene porque se eligió con la validación cruzada antes de ver la prueba.
+
+**¿Qué clientes volverán a comprar en los próximos 90 días?** Con los datos hasta el 2026-10-31, el modelo reentrenado con los 6 cortes con etiqueta da a **187 de los 474 clientes con compras (39,5 %) en riesgo de no volver**. Suman 139.479 € de gasto histórico (el 15,8 % del total). Los 15 más valiosos en riesgo suman 63.173 €. Entre ellos, los que llevan unos meses sin comprar (no años) son la prioridad de la campaña. `data/processed/riesgo_recompra.csv` da cada cliente con su `prob_volver`, si está `en_riesgo` y su gasto. Como comprobación informativa con los datos simulados, la probabilidad media de volver es de 0,914 en los clientes fieles reales y de 0,122 en los puntuales.
