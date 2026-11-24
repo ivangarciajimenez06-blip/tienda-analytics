@@ -9,7 +9,7 @@ Archivos de la semana:
 | `src/features.py` → `tabla_recompra(fecha_corte, horizonte_dias=90)` | Una fila por cliente con 8 variables del pasado y la etiqueta `volvera` del futuro |
 | `notebooks/05_recompra.ipynb` | Cortes, validación por grupos, baselines, KNN, umbral, prueba, lista de acción |
 | `models/recompra_knn.joblib` | Pipeline final con las variables, el umbral, el horizonte y `datos_hasta` |
-| `data/processed/riesgo_recompra.csv` | `id_cliente`, `prob_volver`, `en_riesgo`, `monetario` (no se sube a git) |
+| `data/processed/riesgo_recompra.csv` | `id_cliente`, `prob_volver`, `en_riesgo`, `accion`, `monetario` (no se sube a git) |
 | `docs/img/recompra_*.png` | 7 gráficos |
 
 ## 1. Qué es la fuga de información
@@ -173,7 +173,15 @@ logística es mejor en PR-AUC y F1. Posibles motivos:
   combinaciones de variables, k, pesos y métricas, y la mejor de muchas siempre sale algo inflada.
 
 El modelo final sigue siendo KNN porque se eligió **antes** de ver la prueba; cambiarlo ahora sería
-elegirlo con ella. La logística sería una alternativa igual de buena y más fácil de explicar.
+elegirlo con ella.
+
+**En producción, con el mismo rendimiento, sería preferible la regresión logística**, por
+simplicidad e interpretabilidad:
+- Para predecir no necesita guardar todos los clientes del entrenamiento, como hace KNN.
+- Sus coeficientes dicen cuánto pesa cada variable, así que se puede explicar por qué un cliente
+  está en riesgo.
+
+La forma correcta de cambiar sería decidirlo ahora y comprobarlo con datos nuevos, no con esta prueba.
 
 ## 8. Qué es la calibración
 
@@ -193,10 +201,35 @@ El modelo se reentrena con los 6 cortes con etiqueta (2020 filas), con las **mis
 umbral, y puntúa a los clientes con el corte 2026-11-01:
 
 - **187 de 474 clientes (39,5 %) están en riesgo**. Suman 139.479 € de gasto histórico (15,8 % del total).
-- Los 15 más valiosos en riesgo suman 63.173 €. Hay dos grupos: clientes que llevan casi dos años sin
-  comprar (recencia de 621 a 703 días), que probablemente ya se han perdido, y clientes con buena
-  historia que llevan unos meses sin comprar (recencia de 140 a 305 días), cerca del umbral. Estos
-  segundos son la prioridad de la campaña.
+
+### Recuperables o probablemente perdidos
+
+"En riesgo" mezclaba dos situaciones. Un cliente que lleva 5 meses sin comprar todavía puede volver
+con un contacto. Uno que lleva casi dos años no: para él, una campaña de **retención** llega tarde.
+La primera lista de los 15 más valiosos en riesgo lo dejaba ver, porque la encabezaban clientes con
+más de 600 días sin comprar. Por eso se separan con una **regla de negocio fija**, sin usar la verdad
+ni ningún archivo de la S7:
+
+| `accion` | Regla | Clientes | Gasto histórico | Recencia mediana | `prob_volver` media |
+|---|---|---:|---:|---:|---:|
+| **Recuperable** → campaña | en riesgo y `recencia_dias` < 365 | **95** (20,0 %) | 64.266 € (7,3 %) | 175 días | 0,302 |
+| **Probablemente perdido** | en riesgo y `recencia_dias` ≥ 365 | 92 (19,4 %) | 75.212 € (8,5 %) | 551 días | 0,045 |
+| No en riesgo | `prob_volver` ≥ 0,59 | 287 (60,5 %) | 743.882 € (84,2 %) | 25 días | 0,778 |
+
+**Por qué 365 días:**
+- Un año sin comprar significa que el cliente se ha saltado un ciclo completo, Navidad incluida, que
+  es cuando más se vende. Es fácil de explicar a negocio.
+- Es coherente con la S7: el segmento "Perdidos" tenía una mediana de recencia de 580 días. Con 365
+  días, los "probablemente perdidos" son los que ya se parecen a ese segmento, con margen; su mediana
+  es de 551 días.
+- El 580 solo se cita para justificar la regla. Ni los segmentos ni ningún archivo de la S7 entran en
+  el modelo, así que no hay fuga.
+
+**La campaña va a los 95 recuperables.** Los 15 más valiosos suman 38.210 €, llevan entre 140 y 328
+días sin comprar y tienen una probabilidad de volver de 0,159 a 0,575. Los probablemente perdidos
+gastaron más en el pasado, pero su probabilidad media es de solo 0,045. Si se les contacta, debería
+ser con otra acción (reactivación) y solo a los que más gastaron. El CSV lleva la columna `accion`
+para filtrarlos en el Power BI.
 
 **Comprobación con la verdad** (solo informativa): probabilidad media de volver de 0,914 en los fieles,
 0,669 en los ocasionales y 0,122 en los puntuales. Es lo que cabía esperar.
@@ -220,8 +253,10 @@ umbral, y puntúa a los clientes con el corte 2026-11-01:
 >
 > En la prueba, KNN tuvo una ROC-AUC de 0,845 frente a 0,729 de la regla, pero empató con la regresión
 > logística, que fue incluso mejor en PR-AUC. Lo cuento tal cual: con una relación tan sencilla, un
-> modelo lineal basta. El resultado es una lista de clientes en riesgo, ordenada por valor, para el
-> equipo de marketing."
+> modelo lineal basta: en producción usaría la logística, por simple e interpretable. El resultado es
+> una lista de clientes en riesgo separada con una regla de negocio: los recuperables (menos de un año
+> sin comprar) van a la campaña de retención, y los que llevan más de un año probablemente ya se han
+> perdido."
 
 Preguntas que pueden venir después:
 
@@ -253,7 +288,11 @@ Preguntas que pueden venir después:
    sea justa.
 9. **En el reentreno final no se vuelve a buscar k**: se mantienen los hiperparámetros y el umbral
    elegidos con el entrenamiento.
-10. **Top 15 = los clientes en riesgo con más gasto histórico** (`monetario`), como pide el enunciado
-    ("los más valiosos con más riesgo"). En caso de empate se ordena por `id_cliente`.
-11. **El último corte con etiqueta es el 2026-08-02**, como pide el enunciado. Su ventana termina el
+10. **Top 15 = los recuperables con más gasto histórico** (`monetario`). En la primera versión era
+    sobre todos los clientes en riesgo, pero la encabezaban clientes con casi dos años sin comprar.
+    En caso de empate se ordena por `id_cliente`.
+11. **Recuperable o probablemente perdido con un corte fijo de 365 días de recencia** (sección 9),
+    sin usar la verdad. `recencia_dias` < 365 es recuperable, así que un cliente con exactamente 365
+    días cuenta como probablemente perdido.
+12. **El último corte con etiqueta es el 2026-08-02**, como pide el enunciado. Su ventana termina el
     2026-10-30 y los datos llegan al 2026-10-31.
