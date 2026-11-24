@@ -175,3 +175,15 @@ KNN usa RFM + `pedidos_por_mes` (la frecuencia relativa a la antigüedad, que su
 | **Probablemente perdido** | en riesgo y 365 días o más sin comprar | 92 | 75.212 € (8,5 %) |
 
 Los 365 días equivalen a un año entero sin comprar, Navidad incluida. Es una regla coherente con el segmento "Perdidos" de la S7, cuya mediana de recencia era de 580 días; los probablemente perdidos tienen aquí una mediana de 551 días. **La campaña debe ir a los 95 recuperables.** Los 15 más valiosos suman 38.210 €, llevan entre 140 y 328 días sin comprar y tienen una probabilidad de volver de 0,159 a 0,575. `data/processed/riesgo_recompra.csv` da cada cliente con su `prob_volver`, si está `en_riesgo`, su `accion` y su gasto. Como comprobación informativa con los datos simulados, la probabilidad media de volver es de 0,914 en los clientes fieles reales y de 0,122 en los puntuales.
+
+## Cuadro de mando (Power BI)
+
+> **En construcción.** El informe tendrá 3 páginas (Ventas, Clientes y Alertas de pedidos) y se guardará en `dashboard/tienda.pbix`.
+
+Para generar los datos del informe (modelo en estrella en `data/processed/powerbi/`), después de crear la base de datos y ejecutar los notebooks 03, 04 y 05:
+
+```bash
+python src/exportar_powerbi.py
+```
+
+Cómo importar los datos y montar el informe: [`docs/powerbi_guia.md`](docs/powerbi_guia.md) · Medidas DAX: [`docs/powerbi_medidas.md`](docs/powerbi_medidas.md).
