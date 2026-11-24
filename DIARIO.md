@@ -105,6 +105,7 @@
   - `tabla_recompra(fecha_corte)` en `features.py`: variables solo con pedidos antes del corte y etiqueta `volvera` con los 90 días siguientes.
   - Notebook `05_recompra`: 4 cortes para entrenar (1142 filas), uno posterior para la prueba (418 clientes) y un assert que recalcula todo a mano.
   - Lista de acción en `riesgo_recompra.csv`: 187 de 474 clientes (39,5 %) en riesgo de no volver.
+  - Separé a los 187 clientes en riesgo con una regla de recencia: 95 recuperables (menos de 365 días, van a la campaña) y 92 probablemente perdidos.
 - Aprendido:
   - Fuga de información: una variable con un solo día del futuro hace trampas. Los segmentos de la S7 tampoco valen, porque se calcularon con datos hasta octubre.
   - Con varios cortes, el mismo cliente se repite. Con `KFold` normal, el 90,8 % de las filas de validación tenían al mismo cliente en entrenamiento. Por eso uso `StratifiedGroupKFold`.
