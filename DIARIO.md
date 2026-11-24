@@ -99,3 +99,20 @@
   - El primer umbral llenaba la capacidad y marcaba demasiados pedidos. Lo cambié por Q3 + 1,5·IQR de las puntuaciones (s ≥ 0,614): 121 pedidos, unos 5 al mes.
   - El motivo de una sola variable no explicaba las alertas por combinación. Ahora muestra las 2–3 variables más extremas.
   - Se escapan anomalías de precio alto: solo hay 8 y el 75,5 % de los árboles no ve ninguna. Lo dejo como trabajo futuro: reglas de negocio junto con el modelo.
+
+## S9 · 23–29 nov
+- Hecho:
+  - `tabla_recompra(fecha_corte)` en `features.py`: variables solo con pedidos antes del corte y etiqueta `volvera` con los 90 días siguientes.
+  - Notebook `05_recompra`: 4 cortes para entrenar (1142 filas), uno posterior para la prueba (418 clientes) y un assert que recalcula todo a mano.
+  - Lista de acción en `riesgo_recompra.csv`: 187 de 474 clientes (39,5 %) en riesgo de no volver.
+- Aprendido:
+  - Fuga de información: una variable con un solo día del futuro hace trampas. Los segmentos de la S7 tampoco valen, porque se calcularon con datos hasta octubre.
+  - Con varios cortes, el mismo cliente se repite. Con `KFold` normal, el 90,8 % de las filas de validación tenían al mismo cliente en entrenamiento. Por eso uso `StratifiedGroupKFold`.
+  - Como en Iris, k = 1 sobreajusta (train 1,000, validación 0,708). El mejor k aquí es 41.
+  - `pedidos_por_mes` es la variable que más aporta: sube la ROC-AUC de validación de 0,831 a 0,858.
+  - El umbral se elige con `cross_val_predict`, nunca con la prueba. Con el máximo F1 de "no volverá" sale 0,59.
+- Problemas y cómo los resolví:
+  - KNN no supera a la regresión logística en la prueba: ROC-AUC 0,845 frente a 0,844, y la logística gana en PR-AUC (0,841 frente a 0,811). Lo digo tal cual y mantengo KNN porque lo elegí antes de mirar la prueba.
+  - La ventaja de KNN en la validación cruzada (0,858 frente a 0,840) era en parte optimismo por quedarme con la mejor de muchas combinaciones.
+  - `KFold` y la validación por grupos casi no se diferenciaban (entre −0,004 y 0,002). Las filas de un cliente cambian en 91 días, pero mantengo los grupos porque el riesgo existe.
+  - Los clientes sin compras antes del corte no tienen recencia. Los dejo fuera: entre 14 y 26 por corte.
