@@ -162,6 +162,15 @@ KNN usa RFM + `pedidos_por_mes` (la frecuencia relativa a la antigüedad, que su
 
 ![Curva ROC en la prueba y matriz de confusión de KNN](docs/img/recompra_roc_matriz.png)
 
-**KNN supera con claridad a la regla de negocio, pero no a la regresión logística**: empatan en ROC-AUC y la logística es mejor en PR-AUC y F1. La relación es sencilla (más reciente y más frecuente → más probable volver), y un modelo lineal la capta igual de bien. KNN se mantiene porque se eligió con la validación cruzada antes de ver la prueba.
+**KNN supera con claridad a la regla de negocio, pero no a la regresión logística**: empatan en ROC-AUC y la logística es mejor en PR-AUC y F1. La relación es sencilla (más reciente y más frecuente → más probable volver), y un modelo lineal la capta igual de bien.
 
-**¿Qué clientes volverán a comprar en los próximos 90 días?** Con los datos hasta el 2026-10-31, el modelo reentrenado con los 6 cortes con etiqueta da a **187 de los 474 clientes con compras (39,5 %) en riesgo de no volver**. Suman 139.479 € de gasto histórico (el 15,8 % del total). Los 15 más valiosos en riesgo suman 63.173 €. Entre ellos, los que llevan unos meses sin comprar (no años) son la prioridad de la campaña. `data/processed/riesgo_recompra.csv` da cada cliente con su `prob_volver`, si está `en_riesgo` y su gasto. Como comprobación informativa con los datos simulados, la probabilidad media de volver es de 0,914 en los clientes fieles reales y de 0,122 en los puntuales.
+**¿KNN o regresión logística en producción?** Con el mismo rendimiento, en producción sería preferible la regresión logística por simplicidad e interpretabilidad. Es un modelo más ligero: no necesita guardar todos los clientes de entrenamiento para predecir. Además, sus coeficientes dicen cuánto pesa cada variable, así que se puede explicar a negocio por qué un cliente está en riesgo. KNN se mantiene en este proyecto porque se eligió con la validación cruzada antes de ver la prueba: cambiarlo ahora sería elegir el modelo con la prueba.
+
+**¿Qué clientes volverán a comprar en los próximos 90 días?** Con los datos hasta el 2026-10-31, el modelo reentrenado con los 6 cortes con etiqueta da a **187 de los 474 clientes con compras (39,5 %) en riesgo de no volver**. Suman 139.479 € de gasto histórico (el 15,8 % del total). Una regla de negocio fija los separa en dos grupos:
+
+| Acción | Regla | Clientes | Gasto histórico |
+|---|---|---:|---:|
+| **Recuperable** → campaña de retención | en riesgo y menos de 365 días sin comprar | **95** | 64.266 € (7,3 %) |
+| **Probablemente perdido** | en riesgo y 365 días o más sin comprar | 92 | 75.212 € (8,5 %) |
+
+Los 365 días equivalen a un año entero sin comprar, Navidad incluida. Es una regla coherente con el segmento "Perdidos" de la S7, cuya mediana de recencia era de 580 días; los probablemente perdidos tienen aquí una mediana de 551 días. **La campaña debe ir a los 95 recuperables.** Los 15 más valiosos suman 38.210 €, llevan entre 140 y 328 días sin comprar y tienen una probabilidad de volver de 0,159 a 0,575. `data/processed/riesgo_recompra.csv` da cada cliente con su `prob_volver`, si está `en_riesgo`, su `accion` y su gasto. Como comprobación informativa con los datos simulados, la probabilidad media de volver es de 0,914 en los clientes fieles reales y de 0,122 en los puntuales.
