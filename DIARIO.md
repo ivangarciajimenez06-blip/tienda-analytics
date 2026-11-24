@@ -25,6 +25,7 @@
   - `PRAGMA foreign_keys = ON` es por conexión. Si no lo activo en cada conexión, SQLite no comprueba las claves foráneas.
   - El orden importa: primero las tablas maestras y después las que dependen de ellas. Así se cargan luego los datos, en orden de dependencias.
   - No guardo el total del pedido: se calcula en SQL con `cantidad × precio_unitario`. Un total guardado puede dejar de cuadrar. En los CSV de la S3 hay `total_linea` incoherentes, y ese campo no existe en la BD.
+  - No guardo el total del pedido porque es redundante: si se guarda, puede dejar de coincidir con la suma de sus líneas (como los 25 totales inconsistentes del ejercicio de limpieza de clase). Se calcula con una consulta cuando hace falta.
 - Problemas y cómo los resolví: —
 
 ## S3 y S4 · 23–29 nov
