@@ -115,24 +115,28 @@ Un cuarto de los clientes genera dos tercios de los ingresos. Los segmentos se d
 
 Notebook: [`notebooks/04_anomalias.ipynb`](notebooks/04_anomalias.ipynb) · Modelo: `models/anomalias_iforest.joblib` · Explicación: [`docs/explicacion_s8.md`](docs/explicacion_s8.md)
 
-Variables por pedido (`tabla_pedidos()` en `src/features.py`): importe, nº de líneas, unidades, máximo de unidades en una línea, importe por unidad y el **ratio entre el precio cobrado y el de catálogo** (máximo y mínimo entre sus líneas). Se transforman con logaritmos y se puntúan con `IsolationForest(n_estimators=300)`. El umbral se fija con un **criterio de negocio**: el equipo puede revisar 50 pedidos al mes (el 16,45 % de los pedidos), así que se marcan los 1.200 más sospechosos (s ≥ 0,529). Cada alerta lleva un motivo en palabras (la variable más extrema, en desviaciones robustas), por ejemplo "Muchas unidades: 59 (mediana 2)".
+Variables por pedido (`tabla_pedidos()` en `src/features.py`): importe, nº de líneas, unidades, máximo de unidades en una línea, importe por unidad y el **ratio entre el precio cobrado y el de catálogo** (máximo y mínimo entre sus líneas). Se transforman con logaritmos y se puntúan con `IsolationForest(n_estimators=300)`.
 
-![Puntuación de Isolation Forest con el umbral de capacidad](docs/img/anomalias_puntuaciones.png)
+**Umbral:** el equipo puede revisar 50 pedidos al mes, pero eso es un **tope, no un objetivo**: llenarlo daría más de 1.000 alertas, casi todas de pedidos normales. El umbral sale de la curva de puntuaciones ordenadas. Se compararon el codo de la curva, Q3 + 1,5·IQR, Q3 + 3·IQR y `contamination="auto"`, y se eligió **Q3 + 1,5·IQR de las puntuaciones (s ≥ 0,614)**: 121 pedidos, unos 5 al mes, sin llegar nunca al tope. Cada alerta lleva un motivo con sus 2–3 variables más extremas (en desviaciones robustas), por ejemplo "Muchas líneas: 10 (mediana 1) · Muchas unidades: 24 (mediana 2) · Importe alto: 1.813 € (mediana 84 €)".
 
-![Recall por tipo de anomalía: IQR, Isolation Forest sin ratios y completo](docs/img/anomalias_recall_por_tipo.png)
+![Curva de puntuaciones ordenadas y umbrales candidatos](docs/img/anomalias_umbral.png)
 
-**¿Qué pedidos son sospechosos?** Los que tienen muchas unidades de un mismo producto, muchas líneas o un precio lejos del de catálogo. `data/processed/pedidos_sospechosos.csv` da cada pedido con su puntuación, su posición en el ranking y el motivo, y hay que revisarlos por orden: **de los 50 más sospechosos, 43 son anomalías reales**.
+![Recall por tipo de anomalía con el mismo número de pedidos marcados que IQR](docs/img/anomalias_recall_por_tipo.png)
 
-Con los datos simulados se pudo comparar con las 79 anomalías plantadas (1,08 % de los 7.297 pedidos):
+**¿Qué pedidos son sospechosos?** Los que tienen muchas unidades de un mismo producto, muchas líneas o una combinación rara de tamaño e importe; los precios lejos del de catálogo se detectan peor. `data/processed/pedidos_sospechosos.csv` da cada pedido con su puntuación, su posición en el ranking, si está marcado y el motivo. **Una de cada dos alertas es una anomalía real**, y de los 50 pedidos más sospechosos, 43 lo son.
 
-| | IQR (una variable cada vez) | Isolation Forest (umbral de capacidad) |
-|---|---:|---:|
-| Pedidos marcados | 1.298 | 1.200 |
-| Anomalías encontradas | 62 de 79 | **73 de 79** |
-| Precision | 4,8 % | **6,1 %** |
-| Recall | 78,5 % | **92,4 %** |
-| F1 | 0,090 | **0,114** |
-| PR-AUC (ROC-AUC) | — | **0,762 (0,968)** |
-| Precision@50 | — | **86,0 %** |
+Con los datos simulados se pudo comparar con las 79 anomalías plantadas (1,08 % de los 7.297 pedidos). Para comparar de forma justa con IQR, se usan también los 1.298 pedidos de más puntuación de Isolation Forest (el mismo número de alertas que IQR):
 
-Isolation Forest encuentra todas las cantidades enormes y todos los pedidos con muchas líneas, el 89,5 % de los precios bajos y solo el 50 % de los precios altos. Sin los ratios de precio, la PR-AUC baja de 0,762 a 0,671: la variable bien construida es lo que más aporta. La precision es baja en los dos métodos porque la capacidad (1.200 revisiones) es mucho mayor que el número de anomalías (79).
+| | IQR (una variable cada vez) | Isolation Forest, top 1.298 | Isolation Forest, umbral elegido |
+|---|---:|---:|---:|
+| Pedidos marcados | 1.298 | 1.298 | **121** |
+| Anomalías encontradas | 62 de 79 | 73 de 79 | 63 de 79 |
+| Precision | 4,8 % | 5,6 % | **52,1 %** |
+| Recall | 78,5 % | **92,4 %** | 79,7 % |
+| F1 | 0,090 | 0,106 | **0,630** |
+
+Con la puntuación continua: **ROC-AUC = 0,968**, **PR-AUC = 0,762** (azar = 0,011) y **precision@50 = 86,0 %**. Con el umbral elegido, Isolation Forest encuentra todas las cantidades enormes y todos los pedidos con muchas líneas, pero solo el 42,1 % de los precios bajos y el 37,5 % de los altos: las 16 anomalías que se le escapan son todas de precio. Sin los ratios de precio, la PR-AUC baja de 0,762 a 0,671: la variable bien construida es lo que más aporta.
+
+### Trabajo futuro
+
+- **Enfoque híbrido: reglas de negocio junto con el modelo.** Una regla como "precio pagado > precio de catálogo → revisar" (y lo mismo por debajo) cubriría justo las anomalías de precio que se le escapan al modelo, con muy poco trabajo extra: solo 27 pedidos (0,37 %) tienen un precio distinto del de catálogo. El modelo seguiría encargándose de las combinaciones raras que una regla no ve. La idea surgió al analizar los errores con `_verdad_anomalias.csv`, así que **no se ha aplicado**: el modelo y el umbral se eligieron sin la verdad, y cambiarlos ahora sería elegirlos usándola. Para probarlo bien habría que validarlo con datos nuevos.
