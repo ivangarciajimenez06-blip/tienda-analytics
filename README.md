@@ -110,3 +110,29 @@ Un cuarto de los clientes genera dos tercios de los ingresos. Los segmentos se d
 ### Trabajo futuro
 
 - **Frecuencia relativa en lugar de acumulada.** Usar pedidos al mes desde el alta (frecuencia ÷ antigüedad en meses) en lugar del número total de pedidos. La frecuencia acumulada no distingue "mucho tiempo comprando poco" de "poco tiempo comprando mucho": es la causa del error principal, 50 clientes ocasionales antiguos (0,74 pedidos al mes) clasificados como Fieles (2,19 al mes los fieles de verdad). La idea surgió al analizar los errores con `_verdad_clientes.csv`, así que **no se ha aplicado al modelo actual**: el modelo se eligió solo con métricas internas, y cambiarlo ahora sería elegirlo usando la verdad. Para probarlo bien habría que validarlo sin ella (silueta, Davies-Bouldin, estabilidad) o con datos nuevos.
+
+## Detección de pedidos anómalos
+
+Notebook: [`notebooks/04_anomalias.ipynb`](notebooks/04_anomalias.ipynb) · Modelo: `models/anomalias_iforest.joblib` · Explicación: [`docs/explicacion_s8.md`](docs/explicacion_s8.md)
+
+Variables por pedido (`tabla_pedidos()` en `src/features.py`): importe, nº de líneas, unidades, máximo de unidades en una línea, importe por unidad y el **ratio entre el precio cobrado y el de catálogo** (máximo y mínimo entre sus líneas). Se transforman con logaritmos y se puntúan con `IsolationForest(n_estimators=300)`. El umbral se fija con un **criterio de negocio**: el equipo puede revisar 50 pedidos al mes (el 16,45 % de los pedidos), así que se marcan los 1.200 más sospechosos (s ≥ 0,529). Cada alerta lleva un motivo en palabras (la variable más extrema, en desviaciones robustas), por ejemplo "Muchas unidades: 59 (mediana 2)".
+
+![Puntuación de Isolation Forest con el umbral de capacidad](docs/img/anomalias_puntuaciones.png)
+
+![Recall por tipo de anomalía: IQR, Isolation Forest sin ratios y completo](docs/img/anomalias_recall_por_tipo.png)
+
+**¿Qué pedidos son sospechosos?** Los que tienen muchas unidades de un mismo producto, muchas líneas o un precio lejos del de catálogo. `data/processed/pedidos_sospechosos.csv` da cada pedido con su puntuación, su posición en el ranking y el motivo, y hay que revisarlos por orden: **de los 50 más sospechosos, 43 son anomalías reales**.
+
+Con los datos simulados se pudo comparar con las 79 anomalías plantadas (1,08 % de los 7.297 pedidos):
+
+| | IQR (una variable cada vez) | Isolation Forest (umbral de capacidad) |
+|---|---:|---:|
+| Pedidos marcados | 1.298 | 1.200 |
+| Anomalías encontradas | 62 de 79 | **73 de 79** |
+| Precision | 4,8 % | **6,1 %** |
+| Recall | 78,5 % | **92,4 %** |
+| F1 | 0,090 | **0,114** |
+| PR-AUC (ROC-AUC) | — | **0,762 (0,968)** |
+| Precision@50 | — | **86,0 %** |
+
+Isolation Forest encuentra todas las cantidades enormes y todos los pedidos con muchas líneas, el 89,5 % de los precios bajos y solo el 50 % de los precios altos. Sin los ratios de precio, la PR-AUC baja de 0,762 a 0,671: la variable bien construida es lo que más aporta. La precision es baja en los dos métodos porque la capacidad (1.200 revisiones) es mucho mayor que el número de anomalías (79).
