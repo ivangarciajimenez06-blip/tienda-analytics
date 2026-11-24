@@ -3,19 +3,22 @@
 **Pregunta de negocio 3:** ¿qué pedidos son sospechosos?
 
 **Respuesta corta:** los pedidos con **muchas unidades de un mismo producto**, con **muchas líneas** o
-con un **precio lejos del de catálogo**. Isolation Forest da a cada pedido una puntuación de sospecha y
-un motivo en palabras. Con la capacidad del equipo (50 revisiones al mes) se marcan **1.200 pedidos**
-(16,45 %), ordenados de más a menos sospechoso. **De los 50 primeros, 43 son anomalías reales.**
+con una **combinación rara de tamaño e importe**. Los precios lejos del de catálogo se detectan peor.
+Isolation Forest da a cada pedido una puntuación de sospecha y un motivo con sus 2–3 variables más
+extremas. El umbral sale de la forma de las puntuaciones (Q3 + 1,5·IQR) y marca **121 pedidos (unos 5
+al mes)**, muy por debajo del tope de 50 revisiones al mes. **Una de cada dos alertas es una anomalía
+real** (precision 52,1 %).
 
-| | IQR (una variable cada vez) | Isolation Forest (umbral de capacidad) |
-|---|---:|---:|
-| Pedidos marcados | 1.298 | 1.200 |
-| Anomalías encontradas (de 79) | 62 | **73** |
-| Precision | 4,8 % | **6,1 %** |
-| Recall | 78,5 % | **92,4 %** |
-| F1 | 0,090 | **0,114** |
-| ROC-AUC / PR-AUC | — (no da puntuación) | **0,968 / 0,762** |
-| Precision@50 | — | **86,0 %** |
+| | IQR (una variable cada vez) | Isolation Forest, top 1.298 (mismo nº de alertas que IQR) | Isolation Forest, umbral elegido |
+|---|---:|---:|---:|
+| Pedidos marcados | 1.298 | 1.298 | **121** |
+| Anomalías encontradas (de 79) | 62 | 73 | 63 |
+| Precision | 4,8 % | 5,6 % | **52,1 %** |
+| Recall | 78,5 % | **92,4 %** | 79,7 % |
+| F1 | 0,090 | 0,106 | **0,630** |
+
+Con la puntuación continua (no depende del umbral): **ROC-AUC = 0,968**, **PR-AUC = 0,762** (azar = 0,011)
+y **precision@50 = 86,0 %**.
 
 Archivos nuevos o cambiados:
 
@@ -23,9 +26,9 @@ Archivos nuevos o cambiados:
 |---|---|
 | `src/features.py` | `tabla_pedidos()`. `tabla_mensual()` y `tabla_rfm()` no cambian (comprobado: mismo resultado exacto) |
 | `notebooks/04_anomalias.ipynb` | IQR, Isolation Forest, umbral, motivo de cada alerta, gráficos, estabilidad, evaluación y ablación |
-| `models/anomalias_iforest.joblib` | El pipeline, las variables, el umbral, la referencia para el motivo y `datos_hasta` |
+| `models/anomalias_iforest.joblib` | El pipeline, las variables, el umbral y su criterio, el tope mensual, la referencia para el motivo y `datos_hasta` |
 | `data/processed/pedidos_sospechosos.csv` | `id_pedido`, `puntuacion`, `ranking`, `marcado`, `motivo_principal` para el Power BI de la S10 (no se sube a git, como el resto de `data/`) |
-| `docs/img/anomalias_*.png` | 8 gráficos |
+| `docs/img/anomalias_*.png` | 9 gráficos |
 
 ## 1. Las variables: `tabla_pedidos()`
 
@@ -75,38 +78,38 @@ punto: **h(x)**. Cada árbol se entrena con 256 pedidos al azar, el valor habitu
 
 ### La conexión con el ejercicio de clase (puntos A–E)
 
-En clase hicimos árboles a mano con 5 puntos y calculamos:
+En clase hicimos 4 árboles a mano con A(1, 2), B(2, 3), C(3, 4), D(4, 5) y E(10, 10), y calculamos:
 
 ```
 s(x, n) = 2 ^ ( -E[h(x)] / c(n) )        c(n) = 2·H(n-1) - 2(n-1)/n,   H(i) ≈ ln(i) + 0,5772
 ```
 
+- **h(x)** es la profundidad de x (cortes hasta que queda solo) y **E[h(x)]** su media en los árboles.
 - **c(n)** es el número medio de cortes para aislar un punto cualquiera en un árbol de n puntos. Sirve
   para normalizar: con 5 puntos, 2 cortes es poco; con 256, 2 cortes es poquísimo.
 - h(x) mucho menor que c(n) → **s cerca de 1** → anomalía. h(x) ≈ c(n) → **s ≈ 0,5** → normal.
 - **Umbral de clase: s > 0,5.**
 
-El notebook repite el ejercicio con 5 puntos (A–D juntos entre 1 y 2,5, y E en 9) y calcula s a mano
-recorriendo los 300 árboles de scikit-learn:
+El notebook lo calcula con la fórmula y comprueba los valores de clase con `assert`:
 
-| Punto | x | h(x) medio | s | ¿Anomalía? |
-|---|---:|---:|---:|---|
-| A | 1,0 | 2,630 | 0,4569 | No |
-| B | 1,5 | 3,333 | 0,3705 | No |
-| C | 2,0 | 3,403 | 0,3629 | No |
-| D | 2,5 | 2,870 | 0,4253 | No |
-| **E** | **9,0** | **1,207** | **0,6981** | **Sí** |
+| Punto | Profundidad en los 4 árboles | E[h(x)] | E[h] / c(5) | s | ¿Anomalía? |
+|---|---|---:|---:|---:|---|
+| **E** | 1, 1, 1 y 2 | **1,25** | 0,537 | **0,689** | **Sí** |
+| A–D | — | de 2,5 a 3,5 | de 1,074 a 1,504 | de 0,475 a 0,353 | No |
 
-Con c(5) = 2,327. E se aísla con la mitad de cortes que un punto cualquiera. (Los valores de A–E son un
-ejemplo con la misma forma que el de clase. Si en clase usaste otros, se cambian en la celda.)
+Con c(5) ≈ 2,327. E se aísla con poco más de la mitad de cortes que un punto cualquiera. Con 2,5 cortes
+sale s = 0,4749 (redondeado, 0,47), dentro del rango 0,35–0,48 de clase.
+
+Después se repite con scikit-learn (300 árboles al azar, mismos 5 puntos): E necesita 1,413 cortes y
+puntúa 0,656; A–D, entre 0,371 y 0,481. Los números cambian porque los árboles son otros y son muchos
+más, pero la conclusión es la misma: solo E pasa de 0,5.
 
 Un detalle que en clase no aparecía: los árboles de scikit-learn se paran a una profundidad de log2(n).
 Si en una hoja quedan varios puntos juntos, a su h(x) se le suma c(puntos de la hoja), que estima los
-cortes que faltarían.
+cortes que faltarían. Con eso, el notebook recalcula s a mano recorriendo los 300 árboles y comprueba
+que coincide con scikit-learn.
 
 ### La relación con scikit-learn
-
-El notebook comprueba con `assert` que s calculada a mano coincide con scikit-learn:
 
 | scikit-learn | Es... | Cómo se lee |
 |---|---|---|
@@ -136,70 +139,88 @@ ColumnTransformer(log1p en importe, líneas, unidades, máx. por línea e import
   Comprobado: **la diferencia de puntuación con y sin él es 0**. Se deja porque no cambia nada y prepara
   los datos para el PCA, que sí lo necesita. (K-Means y KNN, en cambio, usan distancias y sí lo necesitan.)
 
-## 4. El umbral: un criterio de negocio
+## 4. El umbral: de la forma de las puntuaciones, con un tope de negocio
 
-El modelo ordena los pedidos, pero **no dice dónde cortar**. Y el histograma de puntuaciones no tiene
-ningún hueco entre normales y raros: la cola baja de forma gradual. El corte lo tiene que poner el negocio.
+El modelo ordena los pedidos, pero **no dice dónde cortar**. El equipo puede revisar como mucho **50
+pedidos al mes** (1.200 en 24 meses, el 16,45 % de los pedidos). **Eso es un tope, no un objetivo.** Si se
+llenara siempre, la mayoría de las revisiones serían pedidos normales: con 1.200 alertas, aunque las 79
+anomalías estuvieran arriba del todo, la precision no podría pasar de 79 / 1.200 = 6,6 %.
 
-**Criterio:** el equipo puede revisar **50 pedidos al mes**. Llegan 304,0 pedidos al mes de media, así que
-se puede revisar el 50 / 304,0 = **16,45 %**. El umbral es la puntuación que deja por encima ese
-porcentaje: **s ≥ 0,529 → 1.200 pedidos**.
+Por eso el umbral se busca en la **curva de puntuaciones ordenadas** (de mayor a menor), sin usar la
+verdad, y después se aplica el tope: si un mes superara 50, solo se marcarían sus 50 más sospechosos.
 
-| Umbral | Pedidos marcados | Al mes (media) | Meses por encima de 50 |
-|---|---:|---:|---:|
-| **Capacidad (elegido)**: s ≥ 0,529 | 1.200 (16,45 %) | 50,0 | 11 de 24 |
-| `contamination="auto"`: s > 0,5 | 1.710 (23,43 %) | 71,2 | 24 de 24 |
+| Criterio | Umbral s | Pedidos con s ≥ umbral | Marcados con el tope | Meses que llegan al tope |
+|---|---:|---:|---:|---:|
+| Codo de toda la curva | 0,511 | 1.463 | 1.151 | 18 |
+| Codo dentro del tope (los 1.200 primeros) | 0,591 | 188 | 188 | 0 |
+| **Q3 + 1,5·IQR de las puntuaciones (elegido)** | **0,614** | **121** | **121** | **0** |
+| Q3 + 3·IQR de las puntuaciones | 0,732 | 3 | 3 | 0 |
+| `contamination="auto"` (s > 0,5) | 0,500 | 1.710 | 1.178 | 22 |
+| Llenar el tope | 0,529 | 1.200 | 1.077 | 12 |
 
-**Por qué el de capacidad:**
+- **El codo** es el punto de la curva más alejado de la recta que une el primero y el último: donde la
+  curva deja de bajar deprisa (pocos pedidos muy raros) y se aplana (muchos parecidos). Se normalizan los
+  dos ejes a 0–1 para que no dependa de las unidades.
+- **Q3 + k·IQR** es la regla de Tukey de la sección 2, pero aplicada a la puntuación, que ya combina las 7
+  variables.
 
-- El automático da más alertas de las que se pueden revisar **todos los meses**. Las que sobran se quedan
-  sin mirar, y sin ningún criterio.
-- El 0,5 sale de la teoría (h(x) = c(n)). El de capacidad responde a la pregunta real: "¿qué miramos con
-  el tiempo que tenemos?".
-- **No se usa el 1 % que plantó el generador**: en una empresa real ese número no se conoce.
+**Por qué Q3 + 1,5·IQR:**
 
-**Ojo:** con un umbral fijo, las alertas siguen al volumen de pedidos: de 26 a 74 al mes. En 11 meses se
-pasa de 50 (el máximo, 74, en 2024-11). Esos meses se revisa por orden de `ranking` hasta llegar a 50.
+1. **Los criterios que llenan el tope no sirven.** El codo de toda la curva, `contamination="auto"` y
+   "llenar el tope" agotan la capacidad casi todos los meses. El codo de toda la curva lo marca la forma
+   de los miles de pedidos normales (la parte plana), no la de los raros.
+2. **Q3 + 3·IQR es demasiado estricto:** marca 3 pedidos y deja fuera al 4.º y al 5.º, que puntúan 0,732 y
+   0,731, prácticamente igual. Separa pedidos casi idénticos.
+3. **Q3 + 1,5·IQR y el codo dentro del tope coinciden en el orden de magnitud** (121 y 188). Entre los
+   dos se elige Q3 + 1,5·IQR porque no depende de ninguna elección arbitraria. El codo sí depende de qué
+   trozo de curva se mire: con toda la curva sale 1.463 y con los 1.200 primeros, 188.
+4. **Es estable:** con otras 5 semillas, su propio Q3 + 1,5·IQR marca entre 109 y 121 pedidos.
+
+**Resultado:** 121 pedidos, 5,0 al mes de media (entre 1 y 10). **El tope no se alcanza ningún mes** y
+queda libre el 89,9 % de la capacidad: si sobra tiempo, el equipo puede seguir bajando por el `ranking`.
 
 ## 5. Cómo se explica cada alerta
 
-Isolation Forest da una puntuación, pero no dice por qué. Para cada pedido se busca su **variable más
-extrema**:
+Isolation Forest da una puntuación, pero no dice por qué. Para cada pedido se buscan sus **variables más
+extremas**:
 
 1. Con las variables ya transformadas (log), como las ve el modelo.
 2. **Desviación robusta** = (valor − mediana) / (1,4826 · MAD), con MAD = mediana de |valor − mediana|.
    Es una puntuación z con la mediana en lugar de la media: los pedidos raros no deforman la referencia.
 3. Si la MAD es 0 (más de la mitad de los pedidos tiene 1 línea o el precio de catálogo), se usa
    1,2533 · la desviación media absoluta: la versión habitual de la "puntuación z modificada" para ese caso.
-4. **Motivo principal** = la variable con la mayor desviación, escrita en palabras.
+4. **Motivo principal** = las **2 o 3 variables con mayor desviación**, de más a menos extrema y escritas
+   en palabras. Siempre se muestran 2; la 3.ª solo si también es extrema (desviación ≥ 2). Si "unidades
+   totales" y "unidades en una línea" valen lo mismo, se muestra solo una.
 
-Ejemplos reales del top 15:
+Con una sola variable no se entendían las alertas **por combinación**. Por ejemplo, el puesto 35 salía como
+"Muchas líneas: 4", y hay 380 pedidos con 4 líneas. Ahora sale "Muchas líneas: 4 · Importe alto: 1.472 €
+(mediana 84 €) · Importe por unidad alto: 147 € (mediana 40 €)": lo raro es tener las tres cosas a la vez.
+
+Ejemplos reales:
 
 | Ranking | Pedido | Puntuación | Motivo principal |
 |---:|---:|---:|---|
-| 1 | 348 | 0,752 | Importe alto: 11.730 € (mediana 84 €) |
-| 3 | 2791 | 0,733 | Muchas unidades: 59 (mediana 2) |
-| 12 | 3245 | 0,721 | Muchas líneas: 10 (mediana 1) |
+| 1 | 348 | 0,752 | Importe alto: 11.730 € (mediana 84 €) · Muchas unidades: 54 (mediana 2) · Importe por unidad alto: 217 € (mediana 40 €) |
+| 4 | 4745 | 0,732 | Muchas unidades: 58 (mediana 2) · Importe por unidad bajo: 9 € (mediana 40 €) |
+| 12 | 3245 | 0,721 | Muchas líneas: 10 (mediana 1) · Muchas unidades: 24 (mediana 2) · Importe alto: 1.813 € (mediana 84 €) |
 
-Alguien de negocio no ve "puntuación 0,73": ve "**59 unidades cuando lo normal son 2**". En el CSV, el
-motivo solo se rellena en los pedidos marcados.
-
-**Su límite:** el motivo muestra una sola variable. En algunos pedidos lo raro es la combinación: por
-ejemplo, el puesto 35 sale como "Muchas líneas: 4", cuando lo raro es tener a la vez 4 líneas, 10
-unidades y 1.472 €.
+De los 121 marcados, 64 tienen 2 variables en el motivo y 57 tienen 3. En el CSV, el motivo solo se
+rellena en los pedidos marcados.
 
 ## 6. Estabilidad
 
-Con 5 semillas más (1 a 5) y el mismo criterio de umbral:
+Con 5 semillas más (1 a 5), marcando el mismo número de pedidos (121):
 
-- Entre el **92,5 % y el 95,8 %** de los marcados coinciden con la semilla 42 (Jaccard medio 0,895).
+- Entre el **92,6 % y el 95,9 %** de los marcados coinciden con la semilla 42 (Jaccard medio 0,897).
 - Del **top 50** coinciden **46 o 47**.
 - Correlación de Spearman entre puntuaciones: de 0,979 a 0,992.
-- 1.076 pedidos se marcan con las 6 semillas y 1.314 con alguna.
+- 109 pedidos se marcan con las 6 semillas y 137 con alguna.
+- Con su propio umbral Q3 + 1,5·IQR (de 0,613 a 0,619), cada semilla marca entre 109 y 121 pedidos.
 
-**Qué significa:** las alertas de arriba del ranking son fiables. Las que están justo en el umbral entran
-o salen según el azar, pero tienen puntuaciones casi iguales a las de los pedidos que se quedan fuera:
-da casi igual revisar unas u otras.
+**Qué significa:** las alertas de arriba del ranking son fiables y el criterio del umbral no depende de la
+suerte. Las que están justo en el umbral entran o salen según la semilla, pero tienen puntuaciones casi
+iguales a las de los pedidos que se quedan fuera.
 
 ## 7. Evaluación: precision, recall, F1, ROC-AUC y PR-AUC
 
@@ -210,49 +231,68 @@ da casi igual revisar unas u otras.
 ### Por qué el accuracy no sirve
 
 **Accuracy** = % de pedidos bien clasificados. Un "modelo" que **no marca nada** acierta el 98,92 %,
-porque el 98,92 % de los pedidos son normales, y no encuentra ni una anomalía. Tiene más accuracy que IQR
-(82,8 %) y que Isolation Forest (84,5 %). Con un 1 % de anomalías, el accuracy premia ignorarlas.
+porque el 98,92 % de los pedidos son normales, y no encuentra ni una anomalía. Con el umbral elegido, el
+accuracy es del 99,0 %: casi lo mismo, aunque encuentra 63 anomalías. Con un 1 % de anomalías, el
+accuracy premia ignorarlas.
 
 ### Las métricas que sí sirven, con estos datos
 
-Matriz de confusión de Isolation Forest con el umbral de capacidad:
+Matriz de confusión de Isolation Forest con el umbral elegido:
 
 | | Predicho normal | Predicho anomalía |
 |---|---:|---:|
-| **Normal de verdad** | 6.091 | 1.127 (falsos positivos) |
-| **Anomalía de verdad** | 6 (se escapan) | **73** |
+| **Normal de verdad** | 7.160 | 58 (falsos positivos) |
+| **Anomalía de verdad** | 16 (se escapan) | **63** |
 
-- **Precision** = de los marcados, cuántos son anomalías: 73 / 1.200 = **6,1 %**. "Si reviso un pedido
+- **Precision** = de los marcados, cuántos son anomalías: 63 / 121 = **52,1 %**. "Si reviso un pedido
   marcado, ¿qué probabilidad hay de que sea un problema?"
-- **Recall** = de las anomalías, cuántas se marcan: 73 / 79 = **92,4 %**. "¿Cuántos problemas se me
+- **Recall** = de las anomalías, cuántas se marcan: 63 / 79 = **79,7 %**. "¿Cuántos problemas se me
   escapan?"
-- **F1** = media armónica de las dos: **0,114**. Solo es alta si las dos lo son.
+- **F1** = media armónica de las dos: **0,630**. Solo es alta si las dos lo son.
 - **ROC-AUC = 0,968:** si se coge al azar una anomalía y un pedido normal, el 96,8 % de las veces la
   anomalía tiene más puntuación. No depende del umbral. El azar da 0,5.
 - **PR-AUC (average precision) = 0,762:** el área bajo la curva precision–recall. Con clases tan
   desequilibradas es más exigente que la ROC-AUC, porque **el azar no da 0,5, sino 0,011** (la proporción
   de anomalías).
+- **Precision@50 = 86,0 %:** de los 50 primeros del ranking, 43 son anomalías. Los 34 primeros lo son
+  todos.
 
-**¿Por qué una precision tan baja?** Porque la capacidad (1.200) es mucho mayor que el número de anomalías
-(79). Aunque las 79 estuvieran arriba del todo, la precision máxima sería 79 / 1.200 = **6,6 %**. Lo que
-mide bien al modelo es el **orden**: **precision@50 = 86,0 %** (43 de los 50 primeros son anomalías) y
-los **34 primeros son todos anomalías**.
+### La comparación justa con IQR
+
+IQR marca 1.298 pedidos y el umbral elegido 121. Comparar sus precision y recall directamente mezcla
+"qué método es mejor" con "cuántas alertas da cada uno". Por eso se compara IQR con **los 1.298 pedidos de
+más puntuación de Isolation Forest**: mismo trabajo de revisión, distinto método.
+
+| Con 1.298 alertas | IQR | Isolation Forest |
+|---|---:|---:|
+| Anomalías encontradas | 62 | **73** |
+| Precision | 4,8 % | **5,6 %** |
+| Recall | 78,5 % | **92,4 %** |
+| F1 | 0,090 | **0,106** |
+
+Con las mismas alertas, el modelo encuentra 11 anomalías más. Y con el umbral elegido encuentra casi las
+mismas que IQR (63 frente a 62) **con 10 veces menos alertas**.
 
 ### Recall por tipo de anomalía
 
-| Tipo | IQR | Isolation Forest | Por qué |
-|---|---:|---:|---|
-| Cantidad enorme (25) | 100 % | **100 %** | 47 unidades de mediana frente a 2. Ranking mediano 14 |
-| Muchas líneas (27) | 100 % | **100 %** | 10 líneas de mediana frente a 1. Ranking mediano 43 |
-| Precio bajo (19) | 10,5 % | **89,5 %** | El ratio mínimo (×0,16) y el importe por unidad (13,04 € frente a 39,66 €). IQR no mira hacia abajo |
-| Precio alto (8) | **100 %** | 50 % | Ver abajo |
+| Tipo | IQR (1.298) | IForest top 1.298 | IForest umbral (121) | Por qué |
+|---|---:|---:|---:|---|
+| Cantidad enorme (25) | 100 % | 100 % | **100 %** | 47 unidades de mediana frente a 2. Ranking mediano 14 |
+| Muchas líneas (27) | 100 % | 100 % | **100 %** | 10 líneas de mediana frente a 1. Ranking mediano 43 |
+| Precio bajo (19) | 10,5 % | 89,5 % | 42,1 % | Ranking mediano 146: casi todas entre los 1.298 primeros, pero no entre los 121 |
+| Precio alto (8) | **100 %** | 50 % | 37,5 % | Ranking mediano 1.008,5 |
 
-**Por qué se escapan los precios altos:** solo 8 de 7.297 pedidos tienen un precio por encima del
-catálogo, y cada árbol ve 256 pedidos al azar: **el 75,5 % de los árboles no ve ninguno**. En esos árboles
-el ratio vale 1 siempre y no se puede cortar por él (solo el 25,7 % de los árboles corta alguna vez por
-`ratio_precio_max`). Además, las 4 que se escapan tienen el sobreprecio en una sola línea de 2 o 3: el
-importe (89,64–306,84 €) y el importe por unidad (32,03–61,37 €) son normales. IQR las encuentra todas
-solo porque su límite es 1: cualquier precio por encima del catálogo cuenta como outlier.
+Las 16 anomalías que se escapan con el umbral elegido **son todas de precio** (11 bajas y 5 altas), con
+puntuaciones de 0,433 a 0,611, justo por debajo de 0,614. **Por qué:**
+
+1. **El ratio es una variable casi constante.** Cada árbol ve 256 pedidos al azar. Solo 8 de 7.297 tienen
+   el precio por encima del catálogo, así que **el 75,5 % de los árboles no ve ninguno** (por debajo, 19
+   pedidos: el 51,3 %). En esos árboles el ratio vale 1 siempre y no se puede cortar por él. Solo el 25,7 %
+   de los árboles corta alguna vez por `ratio_precio_max`, y el 33,3 % por `ratio_precio_min`.
+2. **Las otras variables no las delatan.** Son pedidos de 2 líneas (mediana) con el precio raro en una
+   sola: el importe por unidad (44,8 € y 23,2 € de mediana) es normal.
+3. **IQR encuentra todos los precios altos** solo porque su límite es 1: cualquier precio por encima del
+   catálogo cuenta como outlier. Pero no ve los bajos, porque solo mira hacia arriba.
 
 ### Los falsos positivos más altos
 
@@ -262,26 +302,44 @@ revisión querría mirarlos igualmente: la mediana de un pedido es 83,90 €.
 
 ## 8. Qué enseña la ablación
 
-Se quitan los dos ratios de precio y se repite todo (análisis **a posteriori**: no sirve para elegir el
-modelo, solo para entenderlo):
+Se quitan los dos ratios de precio y se repite todo, marcando el mismo número de pedidos (análisis
+**a posteriori**: no sirve para elegir el modelo, solo para entenderlo):
 
-| Modelo | Recall | F1 | ROC-AUC | PR-AUC | Precision@50 | Recall precio bajo |
-|---|---:|---:|---:|---:|---:|---:|
-| Completo (7 variables) | 92,4 % | 0,114 | 0,968 | **0,762** | 86 % | **89,5 %** |
-| Sin ratios (5 variables) | 83,5 % | 0,103 | 0,928 | 0,671 | 82 % | 52,6 % |
+| Modelo (121 marcados) | Precision | Recall | F1 | ROC-AUC | PR-AUC | Precision@50 | Recall precio bajo |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Completo (7 variables) | **52,1 %** | **79,7 %** | **0,630** | **0,968** | **0,762** | **86 %** | **42,1 %** |
+| Sin ratios (5 variables) | 45,5 % | 69,6 % | 0,550 | 0,928 | 0,671 | 82 % | 5,3 % |
+
+Con 1.298 marcados, el recall de precios bajos cae del 89,5 % al 52,6 %, y su ranking mediano pasa del
+146 al 1.102.
 
 **Lecciones:**
 
 1. **El algoritmo no inventa información.** Un precio raro solo se detecta bien si una variable compara el
    precio con el catálogo. Sin ella, el modelo solo ve el efecto indirecto en el importe por unidad. Una
    división en SQL aporta más que cualquier ajuste de hiperparámetros.
-2. **Pero una variable buena que casi nunca cambia es difícil de usar para Isolation Forest.** Con y sin
-   ratios, el recall de precios altos se queda en 50 %.
-3. **Trabajo futuro (no aplicado):** una regla simple "precio ≠ catálogo → revisar" (solo 27 pedidos) junto
-   al modelo cubriría los precios altos. La idea sale de la evaluación con la verdad, así que no se ha
-   cambiado el modelo, igual que en la S7.
+2. **Pero una variable buena que casi nunca cambia es difícil de usar para Isolation Forest.** Los precios
+   altos bajan del 37,5 % al 25 % sin ratios, pero con ellos tampoco se encuentran bien.
 
-## 9. Si en una entrevista te preguntan "¿cómo detectaste pedidos sospechosos?"
+## 9. Trabajo futuro: un enfoque híbrido (no aplicado)
+
+Usar **reglas de negocio junto con el modelo**. Por ejemplo, "precio pagado > precio de catálogo →
+revisar" (y lo mismo por debajo, con un margen para los redondeos). Una regla así:
+
+- **cubre justo lo que el modelo hace peor:** las 16 anomalías que se escapan son todas de precio;
+- **apenas añade trabajo:** solo 27 pedidos (0,37 %) tienen un precio distinto del de catálogo;
+- **se explica sola:** "se cobró 8 veces el precio de catálogo" no necesita ningún modelo.
+
+El modelo seguiría encargándose de lo que una regla no ve: combinaciones raras de tamaño, importe y
+líneas.
+
+**Por qué no se ha aplicado:** la idea surgió al analizar los errores con la verdad (secciones 7 y 8). El
+modelo, las variables y el umbral se eligieron sin ella; si se cambiaran ahora por lo que se ha visto en
+la evaluación, se estarían eligiendo con la verdad y las métricas dejarían de ser honestas. Para
+aplicarlo bien habría que validarlo con datos nuevos. Es la misma decisión que en la S7 con la
+frecuencia relativa.
+
+## 10. Si en una entrevista te preguntan "¿cómo detectaste pedidos sospechosos?"
 
 > "Primero construí en SQL una tabla con una fila por pedido: importe, líneas, unidades, la cantidad más
 > alta de una línea, el importe por unidad y, sobre todo, el ratio entre el precio cobrado y el de
@@ -289,17 +347,20 @@ modelo, solo para entenderlo):
 > marcaba un 18 % de los pedidos: con datos tan concentrados, 4 líneas ya eran 'outlier', y además no veía
 > los precios por debajo del catálogo. Así que usé Isolation Forest, que aísla los puntos con cortes
 > aleatorios: los raros se aíslan con pocos cortes. Apliqué logaritmos para que los cortes se repartieran
-> bien y para que un precio ×10 y uno ×0,1 fueran igual de raros. Para el umbral no usé el 0,5 por
-> defecto, que marcaba más pedidos de los que se podían revisar: lo calculé con la capacidad del equipo,
-> 50 revisiones al mes. A cada alerta le añadí un motivo en palabras, la variable más extrema en
-> desviaciones robustas, y comprobé que con otras semillas se marcaban casi los mismos pedidos. Como los
-> datos eran simulados, al final pude evaluarlo: recall del 92 % frente al 79 % de IQR con menos alertas,
-> PR-AUC de 0,76, y de los 50 pedidos más sospechosos, 43 eran anomalías reales. Se le escapaba la mitad
-> de los sobreprecios, y la ablación mostró que la variable del ratio de precio era la que más aportaba.
-> Lo que aprendí es que el umbral es una decisión de negocio, que con un 1 % de anomalías el accuracy no
-> sirve, y que las variables importan más que el algoritmo."
+> bien y para que un precio ×10 y uno ×0,1 fueran igual de raros. Para el umbral, el equipo podía revisar
+> 50 pedidos al mes, pero lo traté como un tope, no como un objetivo: llenarlo daba más de 1.000 alertas,
+> casi todas normales. Comparé el codo de la curva de puntuaciones con la regla Q3 + 1,5·IQR sobre la
+> puntuación y me quedé con esta: 121 pedidos, unos 5 al mes. A cada alerta le añadí un motivo con sus
+> 2 o 3 variables más extremas, porque muchas son raras por la combinación, y comprobé que con otras
+> semillas se marcaban casi los mismos pedidos. Como los datos eran simulados, al final pude evaluarlo:
+> una de cada dos alertas era real, con un recall del 80 %. Comparado con IQR con el mismo número de
+> alertas, encontraba 73 anomalías frente a 62. Se le escapaban sobre todo los precios raros, y la
+> ablación mostró que el ratio de precio era la variable que más aportaba. Como mejora propondría
+> combinar el modelo con reglas de negocio para los precios. Lo que aprendí es que el umbral es una
+> decisión de negocio, que con un 1 % de anomalías el accuracy no sirve y que las variables importan más
+> que el algoritmo."
 
-## 10. Decisiones que he tomado yo (por ambigüedad)
+## 11. Decisiones que he tomado yo (por ambigüedad)
 
 1. **Todos los estados en `tabla_pedidos()`**, como pedía el enunciado: un pedido cancelado o devuelto
    también puede ser sospechoso.
@@ -307,16 +368,21 @@ modelo, solo para entenderlo):
    vea los precios bajos es parte de la lección.
 3. **`log` (no `log1p`) en los ratios** para que ×10 y ×0,1 sean simétricos.
 4. **`StandardScaler` dentro del pipeline** aunque no cambie nada, para el PCA (comprobado: diferencia 0).
-5. **Capacidad = 50 / media de pedidos al mes** (todos los estados), con un único umbral para todo el
-   periodo. En los meses de más ventas hay más de 50 alertas y se revisa por ranking.
+5. **Umbral = Q3 + 1,5·IQR de las puntuaciones**, con el tope de 50 al mes aplicado por mes (los 50 de
+   más puntuación). El "codo dentro del tope" mira solo los 1.200 primeros (50 al mes × 24 meses).
 6. **Desviación robusta con MAD y, si la MAD es 0, con 1,2533 · la desviación media absoluta.**
-7. **El motivo solo se rellena en los pedidos marcados** del CSV: en un pedido normal, "su variable más
-   rara" no es el motivo de nada.
-8. **`marcado` como 0/1** en el CSV, y **`ranking` sin empates** (con la misma puntuación, el `id_pedido`
+7. **Motivo con 2 variables siempre y una 3.ª si su desviación es ≥ 2**; sin repetir "unidades totales" y
+   "unidades en una línea" cuando valen lo mismo.
+8. **El motivo solo se rellena en los pedidos marcados** del CSV: en un pedido normal, "sus variables más
+   raras" no son el motivo de nada.
+9. **`marcado` como 0/1** en el CSV, y **`ranking` sin empates** (con la misma puntuación, el `id_pedido`
    más bajo va primero).
-9. **Precio alto o bajo** se distingue en la evaluación con el ratio del pedido, porque el generador solo
-   guarda "precio_anomalo".
-10. **Estabilidad con las semillas 1 a 5**, con el mismo % de pedidos marcados que el modelo final.
-11. **Los valores de A–E son un ejemplo**: no tenía los números exactos del ejercicio de clase.
-12. **El modelo y el CSV se guardan antes de la evaluación** (sección "6b"), para dejar claro que no
+10. **Precio alto o bajo** se distingue en la evaluación con el ratio del pedido, porque el generador solo
+    guarda "precio_anomalo".
+11. **Estabilidad con las semillas 1 a 5**, con el mismo número de pedidos marcados que el modelo final.
+12. **Ablación con el mismo número de marcados** que el modelo completo (121) y que IQR (1.298), para que
+    la diferencia venga solo de las variables.
+13. **Ejemplo de clase:** de A–D solo tenía el rango de profundidades (2,5–3,5), así que el notebook calcula
+    s en los dos extremos del rango.
+14. **El modelo y el CSV se guardan antes de la evaluación** (sección "6b"), para dejar claro que no
     dependen de la verdad.
