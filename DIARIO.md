@@ -117,3 +117,18 @@
   - La ventaja de KNN en la validación cruzada (0,858 frente a 0,840) era en parte optimismo por quedarme con la mejor de muchas combinaciones.
   - `KFold` y la validación por grupos casi no se diferenciaban (entre −0,004 y 0,002). Las filas de un cliente cambian en 91 días, pero mantengo los grupos porque el riesgo existe.
   - Los clientes sin compras antes del corte no tienen recencia. Los dejo fuera: entre 14 y 26 por corte.
+
+## S10 · 23–29 nov
+- Hecho:
+  - `exportar_powerbi.py` con el modelo en estrella: 3 dimensiones (fecha, cliente y producto) y 3 tablas de hechos (ventas, alertas y campañas), con verificaciones.
+  - Las medidas DAX en `docs/powerbi_medidas.md` y las 3 páginas del informe (Ventas, Clientes y Alertas de pedidos), que monté a mano en `dashboard/tienda.pbix`.
+- Aprendido:
+  - Modelo en estrella: las relaciones van de la dimensión a los hechos (uno a varios) con el filtro en una sola dirección. Así un filtro de año o de cliente llega a todas las tablas de hechos sin caminos ambiguos, y las dos tablas de hechos no se relacionan entre sí.
+  - `CALCULATE` cambia el contexto de filtro de una medida (por ejemplo, solo pedidos completados), y `ALL` quita los filtros de una tabla o columna para comparar con el total.
+  - Hay que quitar el Σ a columnas como el año, el mes o los `id_*`: son números, pero no tiene sentido sumarlos.
+  - El valor está en cruzar páginas: el cliente 199 es el recuperable con más gasto histórico (11.026,56 €), pero su pedido 6477 de 10.389,60 € es el nº 2 de las alertas. Sin ese pedido habría gastado 636,96 €, así que hay que revisarlo antes de meterlo en la campaña.
+- Problemas y cómo los resolví:
+  - pandas no estaba instalado en el `.venv`. Lo arreglé con `pip install -r requirements.txt`.
+  - Sincronicé las segmentaciones entre páginas sin querer y un filtro de una página cambiaba las otras.
+  - El filtro N superior no estaba disponible en columnas numéricas. Lo resolví ordenando la tabla de recuperables por gasto.
+  - Los números salían abreviados en "mil" y los porcentajes como decimales. Lo arreglé con el formato de cada medida (moneda y porcentaje).
