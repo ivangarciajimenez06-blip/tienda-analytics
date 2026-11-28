@@ -16,7 +16,7 @@ Archivos de la semana:
 | `app/pages/1_Simulador_publicidad.py` | S6: pedidos e ingresos esperados según la inversión |
 | `app/pages/2_Ficha_de_cliente.py` | S7 + S9 (+ S8): segmento, probabilidad de volver, acción e historial |
 | `app/pages/3_Pedidos_sospechosos.py` | S8: alertas con filtros por año y segmento |
-| `tests/test_app.py` | 8 pruebas automáticas con `AppTest` |
+| `tests/test_app.py` | 10 pruebas automáticas con `AppTest` |
 | `docs/img/app_*.png` | Capturas de las 4 páginas |
 
 Arrancar la app (desde la raíz del proyecto, con el `.venv` activado):
@@ -232,7 +232,7 @@ calcula lo mismo con `src/features.py` y los `.joblib`, igual que los notebooks:
 | Segmento | `tabla_rfm()` → `pipeline.predict()` del K-Means → nombres guardados en el `.joblib` |
 | Probabilidad y acción | `tabla_recompra(fecha_corte())` → `predict_proba()` del KNN → umbral del `.joblib` → regla de los 365 días |
 | Pedidos sospechosos | `tabla_pedidos()` → `-score_samples()` → umbral con el tope mensual → ranking → motivo con las medianas del `.joblib` |
-| Simulador | `predict()` del modelo de pedidos guardado; los ingresos, con el mismo modelo reajustado (ver sección 5) |
+| Simulador | `predict()` de los dos modelos guardados de la S6: pedidos (`regresion_pedidos.joblib`) e ingresos (`regresion_ingresos.joblib`) |
 
 `tests/test_app.py` comprueba que coincide **fila a fila** con los CSV de los notebooks: los 493
 segmentos, las 474 probabilidades (diferencia 0 con 6 decimales), las acciones (95 / 92 / 287), y las
@@ -250,7 +250,7 @@ assert metricas(app)["Gasto total"] == "11.026,56 €"    # muestra lo esperado
 app.selectbox[0].set_value(17).run()                    # elegir otro cliente
 ```
 
-Las 8 pruebas (`python tests/test_app.py`, sin necesidad de pytest):
+Las 10 pruebas (`python tests/test_app.py`, sin necesidad de pytest):
 
 | Prueba | Qué comprueba |
 |---|---|
@@ -261,6 +261,8 @@ Las 8 pruebas (`python tests/test_app.py`, sin necesidad de pytest):
 | `test_ficha_otros_clientes` | Un cliente de cada acción y uno sin compras se muestran sin errores |
 | `test_pedidos_sospechosos` | 121 marcados, el nº 1 es el pedido 348, los filtros funcionan y sin años no hay error |
 | `test_cifras_iguales_que_los_notebooks` | La comparación fila a fila de la sección 3 |
+| `test_sin_datos_personales` | Ninguna página muestra nombres ni emails de clientes (ver 6.2) |
+| `test_solo_modelos_permitidos` | `cargar_modelo()` rechaza nombres fuera de la lista (ver 6.4) |
 | `test_formato_espanol` | `883.360,54 €`, `6.541`, `39,5 %`, `07/06/2026` |
 
 Además, se arrancó la app de verdad con `streamlit run` sin `tienda.db`: muestra el aviso, genera la
@@ -269,12 +271,14 @@ capturas se hicieron con Playwright, instalado aparte, porque no es una dependen
 
 ## 5. Decisiones que he tomado yo (por ambigüedad)
 
-1. **"Ingresos estimados con la cifra elegida en la S6".** El modelo guardado (`regresion_pedidos.joblib`)
-   solo predice **pedidos**. La cifra elegida en la S6 (566,5 € por cada 100 €) es la pendiente del
-   modelo M2 de **ingresos sin los pedidos por encima del percentil 99,5**, que no se guardó. La app
-   lo vuelve a ajustar igual que el notebook (mismos datos, mismo método, `LinearRegression`), así
-   que da exactamente los mismos coeficientes; no cambia la lógica del modelo. El simulador muestra
-   los ingresos estimados del mes con ese modelo y recuerda la cifra de 566,5 € por cada 100 €.
+1. **"Ingresos estimados con la cifra elegida en la S6".** La cifra elegida en la S6 (566,5 € por
+   cada 100 €) es la pendiente del modelo M2 de **ingresos sin los pedidos por encima del percentil
+   99,5**. Al principio solo estaba guardado el modelo de pedidos y la app reajustaba el de ingresos.
+   Ahora el notebook 02 lo guarda en `models/regresion_ingresos.joblib`, con el mismo formato que
+   `regresion_pedidos.joblib` (`modelo`, `variables`, `datos_hasta`... y sin la fecha de ejecución,
+   para que sea determinista: mismo hash SHA-256 en dos ejecuciones). La app lo **carga**, ya no
+   ajusta nada. Comprobado: el efecto por cada 100 € y 10 simulaciones (5 inversiones × temporada sí
+   o no) dan las mismas cifras que antes, a todos los decimales.
 2. **La regla de los 365 días** (recuperable o probablemente perdido) no está en el `.joblib`, porque
    es una regla de negocio y no parte del modelo. Está como constante `RECENCIA_PERDIDO` en
    `utilidades.py`, con un comentario que dice de dónde sale.
@@ -297,6 +301,25 @@ capturas se hicieron con Playwright, instalado aparte, porque no es una dependen
    "pedido sospechoso". Ahora el rojo solo aparece en las alertas.
 10. **`crear_bd.py`** también se renombró (no solo `generar_datos.py`) porque tenía el mismo problema
     y su arreglo es pequeño.
+11. **Tabla de alertas con `st.table`, no con `st.dataframe`.** El motivo llega a ~130 caracteres. En
+    `st.dataframe` (Streamlit 1.67) el texto de una celda **nunca se parte en varias líneas**: se probó
+    `TextColumn(width="large")`, filas más altas (`row_height`) y saltos de línea dentro del texto, y
+    en los tres casos el motivo salía cortado. `st.table` es una tabla HTML normal y sí lo parte. Va
+    dentro de un `st.container(height=460)` para que las 121 filas se desplacen en vertical sin
+    alargar la página. Se pierde ordenar haciendo clic en las columnas, pero la tabla ya sale
+    ordenada por ranking. Comprobado en Chrome: a 1.400 px de ancho la tabla cabe entera, sin
+    desplazamiento horizontal. En ventanas muy estrechas (unos 1.000 px con la barra lateral
+    abierta) sobran unos 50 px. El importe lleva un espacio de no separación antes del "€" para
+    que no se parta en dos líneas.
+12. **`anomalias_iforest.joblib` no se ha vuelto a subir.** Al re-ejecutar el notebook 04 para la
+    verificación, el archivo sale con otro hash que el del repositorio, aunque el contenido es el
+    mismo: puntuaciones idénticas en todos los pedidos, mismos árboles, mismo umbral y mismos valores
+    en `referencia_motivo`. Los bytes cambian porque pickle guarda una cadena una sola vez si es *el
+    mismo objeto* en memoria, y ahora los nombres de las 7 variables se guardan dos veces (en
+    `mediana` y en `escala`). Es una diferencia de codificación, no de modelo. El hash nuevo es
+    estable entre ejecuciones. Como subirlo sería un cambio binario sin cambio real, se dejó la
+    versión del repositorio, igual que las salidas de los notebooks 01, 03 y 04, que solo cambiaban
+    en las marcas de tiempo.
 
 ## 6. Seguridad (antes de publicar la app)
 
@@ -305,13 +328,13 @@ Revisión hecha antes de publicar la app. Resumen:
 | Punto | Resultado | Medida |
 |---|---|---|
 | Secretos en el repositorio y en el historial | ✅ Ninguno | Bloque de seguridad en `.gitignore` |
-| Rutas personales | ⚠️ 1, en una salida del notebook 05 | Pendiente de decidir (ver 6.1) |
+| Rutas personales | ✅ Corregida la del notebook 05 (sigue en el historial) | Avisos con ruta relativa (ver 6.1) |
 | Datos personales en la app | ✅ Ninguno: solo `id_cliente` | Prueba automática |
 | SQL | ✅ Todos los valores van como parámetros | — |
-| Carga de modelos | ✅ Solo 4 nombres fijos de `models/` | Lista cerrada en `cargar_modelo()` + prueba |
+| Carga de modelos | ✅ Solo 5 nombres fijos de `models/` | Lista cerrada en `cargar_modelo()` + prueba |
 | Errores en el navegador | ✅ Sin trazas internas | `showErrorDetails = "none"` |
-| Dependencias (`pip-audit`) | ✅ `requirements.txt` limpio · ⚠️ `pip` y `tornado` del `.venv` | Propuesta de actualización (ver 6.6) |
-| Email de los commits | ⚠️ Dirección personal | Recomendación (ver 6.7) |
+| Dependencias (`pip-audit`) | ✅ Ninguna vulnerabilidad (`requirements.txt` y `.venv`) | `pip` 26.3 y `tornado==6.6.1` (ver 6.6) |
+| Email de los commits | ⚠️ Dirección personal en los ya subidos | Los siguientes, con la noreply de GitHub (ver 6.7) |
 
 ### 6.1 Secretos y rutas personales
 
@@ -325,10 +348,26 @@ alguna vez (`.env`, `.db`, `.csv`, `.pem`...).
   guardadas en base64 dentro de los notebooks, que por azar contienen trozos como `sk-` o `AKIA`.
 - **Ningún archivo sensible** se ha subido nunca (ni la BD, ni los CSV, ni `.env`), y ningún archivo
   se ha borrado del historial.
-- **Una ruta personal:** una salida guardada del notebook 05 (un aviso de scikit-learn) incluye la
+- **Una ruta personal:** una salida guardada del notebook 05 (un aviso de scikit-learn) incluía la
   ruta completa del `.venv`, con la carpeta del usuario de Windows. No es un secreto, pero dice cómo
-  está organizado el equipo. Está en el repositorio público desde la S9. **No se ha tocado**:
-  quitarla del historial exigiría reescribirlo, y eso se decide aparte.
+  está organizado el equipo.
+
+  **Corrección:** Python escribe los avisos (*warnings*) con `warnings.formatwarning`, que empieza
+  por la ruta absoluta del archivo que los lanza. En la primera celda del notebook 05 se sustituye
+  por una función `formato_aviso()` que muestra la ruta **relativa a la raíz del proyecto** (o solo
+  el nombre del archivo, si está fuera). El aviso queda así:
+
+  ```text
+  .venv/Lib/site-packages/sklearn/model_selection/_split.py:86: UserWarning: The groups parameter is ignored by KFold
+  ```
+
+  El notebook se volvió a ejecutar entero con `nbconvert`, y la única salida de texto que cambia es
+  esa línea; los CSV, el modelo y las imágenes que genera son idénticos. Después se buscaron rutas
+  absolutas (`C:\`, `/Users/`, `/home/`, la carpeta del usuario, `AppData`) en **todos** los
+  archivos del repositorio (notebooks, `docs/`, README, código): no queda ninguna.
+
+  **El historial no se ha reescrito** (decisión tomada): la ruta sigue en los commits anteriores, y
+  quien mire el historial en GitHub la puede ver. Solo desaparece de la versión actual.
 
 **`.gitignore`:** se añadió al final un bloque explícito con `.env`, `.streamlit/secrets.toml` y
 `*.local.*`. Las dos primeras ya estaban en la plantilla de Python, pero perdidas entre más de 200
@@ -384,7 +423,7 @@ Por eso la app:
 
 - **No tiene ninguna forma de subir archivos** (no usa `st.file_uploader`) ni lee rutas de la URL.
 - Solo carga los `.joblib` de `models/`, que están en el repositorio y se generaron con los notebooks.
-- `cargar_modelo(nombre)` solo acepta los 4 nombres de `MODELOS_PERMITIDOS`. Antes aceptaba cualquier
+- `cargar_modelo(nombre)` solo acepta los 5 nombres de `MODELOS_PERMITIDOS`. Antes aceptaba cualquier
   texto, así que un `"../otra/carpeta/x"` habría cargado otro archivo si algún día alguien le pasara un
   valor del usuario. `test_solo_modelos_permitidos` comprueba que rechaza otros nombres.
 
@@ -427,6 +466,8 @@ global **no** sirve, porque el del proyecto tiene prioridad sobre él.
 conocidas. Se instaló **solo en el `.venv`** (no está en `requirements.txt`: es una herramienta de
 revisión, no la necesita la app).
 
+Primera revisión:
+
 - **`pip-audit -r requirements.txt`** (lo que se instalaría al publicar): **ninguna vulnerabilidad**.
 - **`pip-audit`** (todo el `.venv`): **13 avisos en 2 paquetes**, ninguno de los fijados en `requirements.txt`:
 
@@ -435,27 +476,47 @@ revisión, no la necesita la app).
 | `pip` | 25.2 | 6 distintos (12 líneas, algunos repetidos): al instalar un paquete malicioso, podría escribir archivos fuera de la carpeta de instalación | **26.2** o superior (la última es 26.3) | No: es el instalador del entorno local |
 | `tornado` | 6.6 | 1: el arreglo de una redirección abierta de la 6.6.0 se podía saltar con URLs que empiezan por 3 o más barras | **6.6.1** | No: lo usa Jupyter, no Streamlit (Streamlit 1.67 usa `uvicorn`) |
 
-`requirements.txt` sale limpio porque `tornado` no está fijado (es una dependencia de Jupyter) y una
-instalación nueva ya elegiría la 6.6.1. **Propuesta (no aplicada):** actualizar el `.venv` con
-`python -m pip install --upgrade "pip>=26.2" "tornado==6.6.1"`. No cambia ninguna versión de
-`requirements.txt` ni los resultados.
+`requirements.txt` salía limpio porque `tornado` no estaba fijado (es una dependencia de Jupyter) y una
+instalación nueva ya elegía la 6.6.1. Pero un `.venv` antiguo, como este, se quedaba con la 6.6.
+
+**Corrección aplicada:**
+
+- En el `.venv`: `python -m pip install --upgrade "pip>=26.2" "tornado==6.6.1"` (queda `pip` 26.3).
+- En `requirements.txt`: `tornado==6.6.1`, con un comentario. Así nadie instala la 6.6, ni siquiera
+  con un entorno que ya la tenía. `pip` **no** va en `requirements.txt`: es el instalador, no una
+  dependencia del proyecto.
+- **Compatibilidad con `streamlit==1.67.0`:** Streamlit 1.67 no depende de `tornado` (funciona sobre
+  `uvicorn` y `starlette`), así que no hay conflicto posible. Lo piden los paquetes de Jupyter
+  (`ipykernel` pide `>=6.5.7`, y los demás piden versiones más antiguas), y la 6.6.1 cumple todos.
+  `pip check`: *No broken requirements found*. Una instalación en limpio de `requirements.txt`
+  (`pip install --dry-run --ignore-installed`) resuelve `streamlit` 1.67.0, `jupyter` 1.1.1 y
+  `tornado` 6.6.1.
+
+**Después:** `pip-audit -r requirements.txt` y `pip-audit` (todo el `.venv`): **No known
+vulnerabilities found** en los dos.
 
 ### 6.7 Email de los commits
 
-`git log` muestra como autor una **dirección personal (Gmail)** en los 80 commits del repositorio
-(63 de ellos ya en `origin/main`). El repositorio es **público**, así que esa dirección ya es visible
+`git log` muestra como autor una **dirección personal (Gmail)** en todos los commits hechos hasta
+ahora (63 de ellos ya en `origin/main`). El repositorio es **público**, así que esa dirección ya es visible
 para cualquiera. El commit inicial, hecho desde la web de GitHub, tiene como *committer* la dirección
 genérica de GitHub, pero como autor también la personal. Los trailers `Co-Authored-By` de los commits
 hechos con Claude Code usan una dirección genérica de Anthropic.
 
-**Recomendación** para los commits siguientes:
+**Decisión:** los commits **ya subidos no se cambian**. Habría que reescribir el historial y forzar
+el push, y aun así no se borrarían las copias que ya existan (clones, forks, cachés).
 
-1. En GitHub: *Settings → Emails* → activar **"Keep my email addresses private"** y **"Block command line
-   pushes that expose my email"**. GitHub da una dirección del tipo `número+usuario@users.noreply.github.com`.
-2. En el proyecto: `git config user.email "<esa dirección noreply>"`.
+**Los commits futuros usarán la dirección noreply de GitHub** (del tipo
+`número+usuario@users.noreply.github.com`), que configura el autor del proyecto:
 
-Cambiar el email de los commits **ya subidos** exigiría reescribir el historial y forzar el push, y no
-borraría las copias que ya existan (clones, forks, cachés). No se ha hecho.
+1. En GitHub: *Settings → Emails* → **"Keep my email addresses private"**. Ahí aparece la dirección
+   noreply. Conviene activar también **"Block command line pushes that expose my email"**, para que
+   GitHub rechace cualquier push que todavía lleve la dirección personal.
+2. En el proyecto: `git config user.email "<la dirección noreply>"`. Afecta solo a los commits
+   nuevos.
+
+GitHub asocia la dirección noreply a la misma cuenta, así que los commits nuevos siguen apareciendo
+con el usuario y el avatar de siempre.
 
 ### 6.8 Otras observaciones
 
