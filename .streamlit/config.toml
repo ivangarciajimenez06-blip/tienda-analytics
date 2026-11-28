@@ -1,5 +1,14 @@
 # Configuración de la app de Streamlit (se lee al ejecutar `streamlit run` desde la raíz del proyecto)
 
+[client]
+# Qué ve el usuario en el navegador si la app falla. "none" = solo un mensaje genérico, sin el tipo
+# de error ni la traza (que muestra rutas y líneas del código interno). La traza completa sigue
+# saliendo en la consola del servidor, que es donde debe mirarla quien mantiene la app.
+# OJO: no usar `false`. En Streamlit 1.67 está obsoleto y equivale a "stacktrace", que SÍ enseña la
+# traza (comprobado). Para ver los errores completos al programar en local, sin tocar este archivo:
+#     streamlit run app/Inicio.py --client.showErrorDetails=full
+showErrorDetails = "none"
+
 [theme]
 # Azul como color principal (controles, botones), el mismo de los gráficos de los notebooks.
 # El rojo queda reservado para lo que es una alerta (pedidos sospechosos).
