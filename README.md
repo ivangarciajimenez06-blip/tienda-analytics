@@ -178,12 +178,57 @@ Los 365 días equivalen a un año entero sin comprar, Navidad incluida. Es una r
 
 ## Cuadro de mando (Power BI)
 
-> **En construcción.** El informe tendrá 3 páginas (Ventas, Clientes y Alertas de pedidos) y se guardará en `dashboard/tienda.pbix`.
+El informe [`dashboard/tienda.pbix`](dashboard/tienda.pbix) reúne en 3 páginas los resultados de las semanas anteriores.
 
-Para generar los datos del informe (modelo en estrella en `data/processed/powerbi/`), después de crear la base de datos y ejecutar los notebooks 03, 04 y 05:
+**Ventas** — ¿Cuánto vendemos, con qué margen, en qué meses y con qué categorías y productos?
 
-```bash
-python src/exportar_powerbi.py
+![Página Ventas del informe de Power BI](docs/img/powerbi_ventas.png)
+
+**Clientes** — ¿Qué peso tiene cada segmento, cuántos clientes están en riesgo de no volver y a qué recuperables conviene llamar primero?
+
+![Página Clientes del informe de Power BI](docs/img/powerbi_clientes.png)
+
+**Alertas de pedidos** — ¿Qué pedidos marca Isolation Forest como sospechosos, cuándo y por qué motivo, del más sospechoso al menos?
+
+![Página Alertas de pedidos del informe de Power BI](docs/img/powerbi_alertas.png)
+
+### Modelo en estrella
+
+3 dimensiones (fecha, cliente y producto) y 3 tablas de hechos (ventas, alertas y campañas). Todas las relaciones son uno a varios, con el filtro en una sola dirección: de la dimensión a los hechos. Las dos tablas de hechos no se relacionan entre sí, sino a través de las dimensiones.
+
+```
+                          ┌──────────────┐
+                          │ dim_producto │
+                          └──────┬───────┘
+                                 │ 1
+                                 ▼ *
+┌─────────────┐ 1       * ┌─────────────┐ *       1 ┌───────────┐
+│ dim_cliente │─────────▶│ fact_ventas │◀─────────│ dim_fecha │
+└──────┬──────┘           └─────────────┘           └──┬─────┬──┘
+       │ 1                                           1 │     │ 1
+       │           * ┌──────────────┐ *                │     │
+       └───────────▶│ fact_alertas │◀─────────────────┘     │
+                     └──────────────┘                         ▼ *
+                                                     ┌───────────────┐
+                                                     │ fact_campanas │
+                                                     └───────────────┘
+
+   1 ──▶ *  =  uno a varios; la flecha marca la dirección del filtro (de la dimensión a los hechos)
 ```
 
-Cómo importar los datos y montar el informe: [`docs/powerbi_guia.md`](docs/powerbi_guia.md) · Medidas DAX: [`docs/powerbi_medidas.md`](docs/powerbi_medidas.md).
+### Cómo abrirlo
+
+1. Genera los datos (base de datos, notebooks 03, 04 y 05 y el modelo en estrella en `data/processed/powerbi/`). Los comandos completos están en el paso 0 de la [guía](docs/powerbi_guia.md#0-generar-los-datos); el último es:
+
+   ```bash
+   python src/exportar_powerbi.py
+   ```
+
+2. Abre `dashboard/tienda.pbix` con **Power BI Desktop** y pulsa **Actualizar**.
+3. Si las rutas de los CSV no coinciden con las de tu equipo: **Transformar datos → Configuración de origen de datos → Cambiar origen** y elige cada archivo de `data/processed/powerbi/`.
+
+Cómo se montó el informe paso a paso: [`docs/powerbi_guia.md`](docs/powerbi_guia.md) · Medidas DAX: [`docs/powerbi_medidas.md`](docs/powerbi_medidas.md).
+
+### Hallazgo de ejemplo: cruzar Clientes con Alertas
+
+En la página **Clientes**, el cliente **199** (Murcia, Habituales) encabeza la lista de recuperables por gasto histórico: **11.026,56 €**, más del triple que el segundo (3.487,00 €). Pero en la página **Alertas**, su pedido **6477** del 07/06/2026, de **10.389,60 €** (48 unidades), es el **nº 2 del ranking** de pedidos sospechosos. Sin ese pedido, su gasto sería de 636,96 €. **Antes de incluirlo en la campaña de retención habría que revisar ese pedido**: si fuera una anomalía, el cliente 199 no sería el más valioso de la lista.
