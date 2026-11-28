@@ -26,6 +26,7 @@ Python · SQLite · pandas · scikit-learn · seaborn · Power BI · Streamlit
 | `models/` | Modelos entrenados |
 | `dashboard/` | Informe de Power BI |
 | `app/` | Aplicación Streamlit |
+| `tests/` | Pruebas automáticas de la app |
 
 ## Cómo ejecutarlo
 
@@ -232,3 +233,31 @@ Cómo se montó el informe paso a paso: [`docs/powerbi_guia.md`](docs/powerbi_gu
 ### Hallazgo de ejemplo: cruzar Clientes con Alertas
 
 En la página **Clientes**, el cliente **199** (Murcia, Habituales) encabeza la lista de recuperables por gasto histórico: **11.026,56 €**, más del triple que el segundo (3.487,00 €). Pero en la página **Alertas**, su pedido **6477** del 07/06/2026, de **10.389,60 €** (48 unidades), es el **nº 2 del ranking** de pedidos sospechosos. Sin ese pedido, su gasto sería de 636,96 €. **Antes de incluirlo en la campaña de retención habría que revisar ese pedido**: si fuera una anomalía, el cliente 199 no sería el más valioso de la lista.
+
+## App interactiva (Streamlit)
+
+Una app web para usar los modelos sin escribir código, pensada para alguien de negocio. Arrancarla desde la raíz del proyecto, con el entorno activado:
+
+```bash
+streamlit run app/Inicio.py
+```
+
+Se abre en el navegador (`http://localhost:8501`). **No hace falta generar los datos antes:** si no existe `data/processed/tienda.db`, la app los genera sola al arrancar (unos segundos, solo la primera vez). Tampoco hace falta ejecutar los notebooks: la app calcula los segmentos, la probabilidad de volver y las alertas con `src/features.py` y los modelos de `models/`, y da exactamente los mismos resultados que los notebooks.
+
+**Inicio** — Qué es el proyecto, los indicadores principales y las 4 preguntas de negocio con su respuesta.
+
+![Página de inicio de la app](docs/img/app_inicio.png)
+
+**Simulador de publicidad** (S6) — Pedidos e ingresos esperados en un mes según la inversión, dentro del rango observado (1.845 – 5.209 €).
+
+![Simulador de publicidad](docs/img/app_simulador.png)
+
+**Ficha de cliente** (S7 + S9) — Segmento, probabilidad de volver en 90 días, acción e historial de pedidos de cada cliente, con un aviso si alguno de sus pedidos es sospechoso (S8). Se abre con el cliente 199, el caso encontrado en Power BI.
+
+![Ficha de cliente](docs/img/app_ficha_cliente.png)
+
+**Pedidos sospechosos** (S8) — Los 121 pedidos marcados con su motivo, con filtros por año y segmento y las alertas por mes.
+
+![Pedidos sospechosos](docs/img/app_pedidos_sospechosos.png)
+
+Pruebas automáticas de las 4 páginas (con `streamlit.testing.v1.AppTest`): `python tests/test_app.py`. Cómo funciona la app, las cachés y la generación de los datos: [`docs/explicacion_s11.md`](docs/explicacion_s11.md).
