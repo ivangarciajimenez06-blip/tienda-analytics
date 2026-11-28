@@ -339,7 +339,23 @@ def guardar(df: pd.DataFrame, nombre: str) -> None:
     df.to_csv(ruta, index=False, encoding="utf-8")
     print(f" {nombre:<20} {len(df):>6} filas -> {ruta.name}")
 
+def reiniciar_aleatoriedad() -> None:
+    """Vuelve a sembrar rng y Faker con SEMILLA.
+
+    rng y fake se crean al importar el módulo, y cada número aleatorio que se pide avanza su estado.
+    Si main() se llama dos veces en el mismo proceso (por ejemplo, desde la app de Streamlit), la
+    segunda llamada seguiría desde donde se quedó la primera y daría OTROS datos. Volviendo a
+    sembrar al empezar, cada llamada da exactamente los mismos CSV.
+    rng y fake van en minúscula porque no son constantes: son objetos que cambian al usarlos.
+    """
+    global rng
+    rng = np.random.default_rng(SEMILLA)
+    Faker.seed(SEMILLA)
+    fake.unique.clear()  # Faker recuerda los emails ya usados para no repetirlos: se olvida
+
+
 def main() -> None:
+    reiniciar_aleatoriedad()
     CARPETA_RAW.mkdir(parents=True, exist_ok=True)
     print("Generando datos en", CARPETA_RAW)
 
