@@ -297,3 +297,171 @@ capturas se hicieron con Playwright, instalado aparte, porque no es una dependen
    "pedido sospechoso". Ahora el rojo solo aparece en las alertas.
 10. **`crear_bd.py`** también se renombró (no solo `generar_datos.py`) porque tenía el mismo problema
     y su arreglo es pequeño.
+
+## 6. Seguridad (antes de publicar la app)
+
+Revisión hecha antes de publicar la app. Resumen:
+
+| Punto | Resultado | Medida |
+|---|---|---|
+| Secretos en el repositorio y en el historial | ✅ Ninguno | Bloque de seguridad en `.gitignore` |
+| Rutas personales | ⚠️ 1, en una salida del notebook 05 | Pendiente de decidir (ver 6.1) |
+| Datos personales en la app | ✅ Ninguno: solo `id_cliente` | Prueba automática |
+| SQL | ✅ Todos los valores van como parámetros | — |
+| Carga de modelos | ✅ Solo 4 nombres fijos de `models/` | Lista cerrada en `cargar_modelo()` + prueba |
+| Errores en el navegador | ✅ Sin trazas internas | `showErrorDetails = "none"` |
+| Dependencias (`pip-audit`) | ✅ `requirements.txt` limpio · ⚠️ `pip` y `tornado` del `.venv` | Propuesta de actualización (ver 6.6) |
+| Email de los commits | ⚠️ Dirección personal | Recomendación (ver 6.7) |
+
+### 6.1 Secretos y rutas personales
+
+Se buscó con `git grep` (archivos actuales) y con `git log --all -p` (**todo el historial**, todas las
+ramas, también lo que se borró después) cualquier cosa con forma de secreto: `password`, `secret`,
+`token`, `api_key`, claves privadas (`BEGIN ... PRIVATE KEY`) y formatos conocidos de claves (`ghp_`,
+`github_pat_`, `sk-...`, `AKIA...`). También emails, IPs y archivos sensibles que se hubieran subido
+alguna vez (`.env`, `.db`, `.csv`, `.pem`...).
+
+- **Secretos: ninguno.** Hubo coincidencias, pero todas eran **falsos positivos**: imágenes PNG
+  guardadas en base64 dentro de los notebooks, que por azar contienen trozos como `sk-` o `AKIA`.
+- **Ningún archivo sensible** se ha subido nunca (ni la BD, ni los CSV, ni `.env`), y ningún archivo
+  se ha borrado del historial.
+- **Una ruta personal:** una salida guardada del notebook 05 (un aviso de scikit-learn) incluye la
+  ruta completa del `.venv`, con la carpeta del usuario de Windows. No es un secreto, pero dice cómo
+  está organizado el equipo. Está en el repositorio público desde la S9. **No se ha tocado**:
+  quitarla del historial exigiría reescribirlo, y eso se decide aparte.
+
+**`.gitignore`:** se añadió al final un bloque explícito con `.env`, `.streamlit/secrets.toml` y
+`*.local.*`. Las dos primeras ya estaban en la plantilla de Python, pero perdidas entre más de 200
+líneas; ahora queda claro, en un solo sitio, qué no debe subirse nunca. Comprobado con
+`git check-ignore`. Si algún día la app necesita una clave, va en `.streamlit/secrets.toml` y se lee
+con `st.secrets`, nunca escrita en el código.
+
+### 6.2 Datos personales
+
+La base de datos tiene nombre y email de cada cliente (simulados con Faker, pero con forma real). La
+app **no los lee nunca**: la única consulta a `clientes` pide `id_cliente, ciudad, fecha_alta`
+(minimización de datos: no se carga lo que no se va a usar). En el código, "email" solo aparece como
+canal de publicidad.
+
+Para no depender de leer el código, `test_sin_datos_personales` abre las 4 páginas (y la ficha de 4
+clientes distintos), recoge **todo** lo que muestran (textos, métricas, las 493 opciones del selector
+de clientes y el contenido de las tablas) y comprueba que no aparece ninguno de los 493 nombres ni de
+los emails de la BD. Se comprobó también que la prueba no pasa "en vacío": sí lee el interior de las
+tablas y detectaría un nombre si apareciera. Las 4 capturas de `docs/img/app_*.png` se revisaron a
+mano: solo aparecen números de cliente ("Cliente 199 · Murcia · Habituales").
+
+### 6.3 SQL: siempre con parámetros
+
+**Inyección SQL:** si un valor que viene de fuera se pega dentro del texto de la consulta, ese valor
+puede cambiar la consulta. Con `f"... WHERE id_cliente = {valor}"`, un "valor" como `1 OR 1=1` haría
+que la consulta devolviera todos los clientes. Con parámetros (`WHERE id_cliente = ?` o `:corte`), la
+base de datos recibe el valor **aparte** y lo trata siempre como un dato, nunca como SQL.
+
+Se revisaron todas las consultas de `src/` y `app/`, incluidas las f-strings (con el analizador de
+Python `ast`, que encuentra también las de varias líneas):
+
+- **Todos los valores van como parámetros**: `:umbral` (`tabla_mensual`), `:corte`, `:horizonte` y
+  `:dias_mes` (`tabla_recompra`), y `?` en la carga de `limpieza.py`.
+- Las dos f-strings de `features.py` (`CONSULTA_TABLA_MENSUAL` y `CONSULTA_RFM`) solo unen **trozos
+  fijos de SQL** escritos en el propio código (`CONSULTA_IMPORTE_POR_PEDIDO`, `CONSULTA_FECHA_CORTE`).
+- `limpieza.py` monta `INSERT INTO {tabla} ({columnas}) VALUES (?, ?, ...)`: interpola **nombres** de
+  tabla y columna, que en SQL no se pueden pasar como parámetro. Salen de la lista fija `ORDEN_CARGA`
+  y de las columnas de los CSV que genera el propio proyecto. Los **valores** sí van con `?`.
+- **En la app, ningún valor del usuario llega a SQL.** El cliente elegido, el año y el segmento se
+  filtran con pandas sobre tablas ya cargadas.
+
+### 6.4 Modelos: por qué cargar un `.joblib` desconocido es peligroso
+
+Un `.joblib` (como un `.pkl`) no es un archivo de "datos" como un CSV: guarda objetos de Python con
+`pickle`, y para reconstruirlos, **`joblib.load()` puede ejecutar el código que el archivo le
+indique**. El formato lo permite a propósito (así se reconstruyen objetos complejos), y un archivo
+preparado puede usarlo para ejecutar cualquier cosa en el servidor: borrar archivos, leer
+`secrets.toml` o instalar un programa. Y ocurre **al cargarlo**, antes de llamar a `predict()`. La
+documentación de Python y la de scikit-learn lo dicen: *nunca cargues un pickle de una fuente en la
+que no confíes*.
+
+Por eso la app:
+
+- **No tiene ninguna forma de subir archivos** (no usa `st.file_uploader`) ni lee rutas de la URL.
+- Solo carga los `.joblib` de `models/`, que están en el repositorio y se generaron con los notebooks.
+- `cargar_modelo(nombre)` solo acepta los 4 nombres de `MODELOS_PERMITIDOS`. Antes aceptaba cualquier
+  texto, así que un `"../otra/carpeta/x"` habría cargado otro archivo si algún día alguien le pasara un
+  valor del usuario. `test_solo_modelos_permitidos` comprueba que rechaza otros nombres.
+
+Si algún día hubiera que aceptar modelos de fuera, habría que usar un formato que no ejecuta código
+(por ejemplo, ONNX o `skops`, que inspecciona el archivo antes de cargarlo).
+
+### 6.5 Errores: no enseñar trazas internas
+
+Cuando una app de Streamlit falla, por defecto muestra en el navegador la **traza completa** (*traceback*):
+el tipo de error, el mensaje, los archivos y las líneas del código interno. Al programar es muy útil,
+pero en una app publicada da pistas a un atacante (rutas, librerías, cómo está hecho el código) y
+confunde a un usuario de negocio.
+
+En `.streamlit/config.toml`:
+
+```toml
+[client]
+showErrorDetails = "none"
+```
+
+> **Ojo: no vale `false`.** En Streamlit 1.67 `false` está obsoleto y equivale a `"stacktrace"`, que
+> **sigue mostrando la traza**. Se comprobó con una página de prueba que lanzaba un error, en Chrome:
+> con `false` se veían la traza y el tipo de error; con `"none"`, solo un mensaje genérico.
+
+La traza completa sigue saliendo en la **consola** donde corre `streamlit run`, que es donde la tiene
+que mirar quien mantiene la app.
+
+**Para ver los errores completos en local**, sin tocar el archivo (así no se sube por error):
+
+```powershell
+streamlit run app/Inicio.py --client.showErrorDetails=full
+```
+
+La opción de la línea de comandos tiene prioridad sobre `config.toml`. Un `~/.streamlit/config.toml`
+global **no** sirve, porque el del proyecto tiene prioridad sobre él.
+
+### 6.6 Dependencias: `pip-audit`
+
+`pip-audit` compara las versiones instaladas con una base de datos pública de vulnerabilidades
+conocidas. Se instaló **solo en el `.venv`** (no está en `requirements.txt`: es una herramienta de
+revisión, no la necesita la app).
+
+- **`pip-audit -r requirements.txt`** (lo que se instalaría al publicar): **ninguna vulnerabilidad**.
+- **`pip-audit`** (todo el `.venv`): **13 avisos en 2 paquetes**, ninguno de los fijados en `requirements.txt`:
+
+| Paquete | Versión | Avisos | Versión corregida | ¿Afecta a la app publicada? |
+|---|---|---|---|---|
+| `pip` | 25.2 | 6 distintos (12 líneas, algunos repetidos): al instalar un paquete malicioso, podría escribir archivos fuera de la carpeta de instalación | **26.2** o superior (la última es 26.3) | No: es el instalador del entorno local |
+| `tornado` | 6.6 | 1: el arreglo de una redirección abierta de la 6.6.0 se podía saltar con URLs que empiezan por 3 o más barras | **6.6.1** | No: lo usa Jupyter, no Streamlit (Streamlit 1.67 usa `uvicorn`) |
+
+`requirements.txt` sale limpio porque `tornado` no está fijado (es una dependencia de Jupyter) y una
+instalación nueva ya elegiría la 6.6.1. **Propuesta (no aplicada):** actualizar el `.venv` con
+`python -m pip install --upgrade "pip>=26.2" "tornado==6.6.1"`. No cambia ninguna versión de
+`requirements.txt` ni los resultados.
+
+### 6.7 Email de los commits
+
+`git log` muestra como autor una **dirección personal (Gmail)** en los 80 commits del repositorio
+(63 de ellos ya en `origin/main`). El repositorio es **público**, así que esa dirección ya es visible
+para cualquiera. El commit inicial, hecho desde la web de GitHub, tiene como *committer* la dirección
+genérica de GitHub, pero como autor también la personal. Los trailers `Co-Authored-By` de los commits
+hechos con Claude Code usan una dirección genérica de Anthropic.
+
+**Recomendación** para los commits siguientes:
+
+1. En GitHub: *Settings → Emails* → activar **"Keep my email addresses private"** y **"Block command line
+   pushes that expose my email"**. GitHub da una dirección del tipo `número+usuario@users.noreply.github.com`.
+2. En el proyecto: `git config user.email "<esa dirección noreply>"`.
+
+Cambiar el email de los commits **ya subidos** exigiría reescribir el historial y forzar el push, y no
+borraría las copias que ya existan (clones, forks, cachés). No se ha hecho.
+
+### 6.8 Otras observaciones
+
+- Al arrancar en local, `streamlit run` escucha en todas las interfaces de red e imprime una "Network
+  URL": cualquiera en la misma red wifi puede abrir la app. Con datos simulados no es grave. Para
+  limitarla a tu ordenador: `streamlit run app/Inicio.py --server.address localhost`.
+- Publicar la app también instalaría Jupyter, porque está en `requirements.txt`. Funciona, pero añade
+  paquetes que la app no usa. Si se quisiera reducir, se podría separar en `requirements.txt` (app) y
+  `requirements-dev.txt` (notebooks, `pip-audit`).
