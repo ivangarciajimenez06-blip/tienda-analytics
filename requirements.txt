@@ -16,6 +16,9 @@ seaborn==0.13.2
 
 # Notebooks
 jupyter==1.1.1
+# tornado no se importa directamente (lo usa Jupyter; Streamlit 1.67 ya no), pero se fija para no
+# instalar la 6.6, que tiene una vulnerabilidad conocida (CVE-2026-126347, arreglada en la 6.6.1)
+tornado==6.6.1
 
 # App (Altair viene con Streamlit, pero la app lo importa directamente)
 streamlit==1.67.0
