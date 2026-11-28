@@ -1,0 +1,7 @@
+# Commits que solo cambian formato, no contenido. Sirve para que `git blame` los salte y muestre
+# quién escribió de verdad cada línea. Se activa con:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub lo usa solo, sin configurar nada).
+
+# chore: renormalizar los finales de línea (CRLF -> LF en el repositorio), según .gitattributes
+9afdc9cf97c87196bece1bd86730607531b287ca
