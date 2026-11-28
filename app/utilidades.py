@@ -294,12 +294,17 @@ def _describir_variable(variable: str, valor: float, sentido: float, medianas: p
 def _motivo(desviacion: pd.Series, pedido: pd.Series, medianas: pd.Series, extrema: float) -> str:
     """Las 2-3 variables más extremas del pedido, de más a menos (copia de variables_motivo())."""
     unidades = {"unidades_totales", "max_cantidad_linea"}
+    ratios = {"ratio_precio_max", "ratio_precio_min"}
     orden = desviacion.abs().sort_values(ascending=False, kind="stable").index
     elegidas = []
     for v in orden:
         # Unidades totales y unidades en una línea con el mismo valor: solo se muestra una
         if v in unidades and any(e in unidades for e in elegidas) \
                 and pedido["unidades_totales"] == pedido["max_cantidad_linea"]:
+            continue
+        # Igual con los dos ratios de precio (pedidos de una sola línea): la misma frase dos veces
+        if v in ratios and any(e in ratios for e in elegidas) \
+                and pedido["ratio_precio_max"] == pedido["ratio_precio_min"]:
             continue
         if len(elegidas) >= 2 and abs(desviacion[v]) < extrema:
             break

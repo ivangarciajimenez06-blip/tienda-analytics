@@ -191,7 +191,8 @@ extremas**:
    1,2533 · la desviación media absoluta: la versión habitual de la "puntuación z modificada" para ese caso.
 4. **Motivo principal** = las **2 o 3 variables con mayor desviación**, de más a menos extrema y escritas
    en palabras. Siempre se muestran 2; la 3.ª solo si también es extrema (desviación ≥ 2). Si "unidades
-   totales" y "unidades en una línea" valen lo mismo, se muestra solo una.
+   totales" y "unidades en una línea" valen lo mismo, se muestra solo una; igual con los dos ratios de
+   precio en un pedido de una sola línea (corregido en la S11: antes salía la misma frase dos veces).
 
 Con una sola variable no se entendían las alertas **por combinación**. Por ejemplo, el puesto 35 salía como
 "Muchas líneas: 4", y hay 380 pedidos con 4 líneas. Ahora sale "Muchas líneas: 4 · Importe alto: 1.472 €
@@ -205,7 +206,7 @@ Ejemplos reales:
 | 4 | 4745 | 0,732 | Muchas unidades: 58 (mediana 2) · Importe por unidad bajo: 9 € (mediana 40 €) |
 | 12 | 3245 | 0,721 | Muchas líneas: 10 (mediana 1) · Muchas unidades: 24 (mediana 2) · Importe alto: 1.813 € (mediana 84 €) |
 
-De los 121 marcados, 64 tienen 2 variables en el motivo y 57 tienen 3. En el CSV, el motivo solo se
+De los 121 marcados, 67 tienen 2 variables en el motivo y 54 tienen 3. En el CSV, el motivo solo se
 rellena en los pedidos marcados.
 
 ## 6. Estabilidad
