@@ -236,7 +236,7 @@ def test_sin_datos_personales():
 
 
 def test_solo_modelos_permitidos():
-    """cargar_modelo() rechaza cualquier nombre que no sea uno de los 4 modelos de models/."""
+    """cargar_modelo() rechaza cualquier nombre que no sea uno de los 5 modelos de models/."""
     for nombre in ["../data/processed/otro", "C:/Windows/algo", "recompra_knn.joblib", ""]:
         try:
             u.cargar_modelo(nombre)

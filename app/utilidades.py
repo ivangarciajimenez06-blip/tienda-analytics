@@ -20,7 +20,6 @@ import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
-from sklearn.linear_model import LinearRegression
 
 # Rutas: la app está en app/, el código de análisis en src/
 RAIZ = Path(__file__).resolve().parent.parent
@@ -117,7 +116,8 @@ def asegurar_datos() -> bool:
 # Los únicos modelos que la app puede cargar. Cargar un .joblib ejecuta código (ver la sección
 # "Seguridad" de docs/explicacion_s11.md), así que solo se aceptan estos nombres fijos: nunca una
 # ruta que venga del usuario, de la URL o de un archivo subido.
-MODELOS_PERMITIDOS = ("regresion_pedidos", "segmentacion_kmeans", "anomalias_iforest", "recompra_knn")
+MODELOS_PERMITIDOS = ("regresion_pedidos", "regresion_ingresos", "segmentacion_kmeans", "anomalias_iforest",
+                      "recompra_knn")
 
 
 @st.cache_resource
@@ -175,34 +175,28 @@ def meses() -> pd.DataFrame:
     return mensual
 
 
-@st.cache_resource
-def modelo_ingresos() -> LinearRegression:
-    """Modelo M2 de ingresos de la S6 (notebook 02, sección 6.1), la "cifra elegida".
-
-    No está guardado en un .joblib (el modelo guardado predice pedidos), así que se vuelve a
-    ajustar igual que en el notebook: regresión lineal de los ingresos sin pedidos por encima del
-    percentil 99,5 frente a inversión y temporada, con los 24 meses. Mismos datos y mismo método
-    dan exactamente los mismos coeficientes (cada 100 € -> 566,5 €).
-    """
-    variables = cargar_modelo("regresion_pedidos")["variables"]
-    mensual = meses()
-    return LinearRegression().fit(mensual[variables], mensual["ingresos_sin_extremos"])
+# Los dos modelos de la S6 (notebook 02): pedidos completados (M2) e ingresos sin los pedidos por
+# encima del percentil 99,5 (M2, la "cifra elegida": cada 100 € -> 566,5 €)
+MODELOS_S6 = {"pedidos": "regresion_pedidos", "ingresos": "regresion_ingresos"}
 
 
 def simular(inversion: float, temporada_alta: bool) -> dict:
     """Pedidos completados esperados e ingresos estimados de un mes con esa inversión."""
-    paquete = cargar_modelo("regresion_pedidos")
-    X = pd.DataFrame({"inversion_total": [inversion], "temporada_alta": [int(temporada_alta)]})[paquete["variables"]]
-    return {"pedidos": float(paquete["modelo"].predict(X)[0]),
-            "ingresos": float(modelo_ingresos().predict(X)[0])}
+    mes = pd.DataFrame({"inversion_total": [inversion], "temporada_alta": [int(temporada_alta)]})
+    resultado = {}
+    for clave, nombre in MODELOS_S6.items():
+        paquete = cargar_modelo(nombre)
+        resultado[clave] = float(paquete["modelo"].predict(mes[paquete["variables"]])[0])
+    return resultado
 
 
 def efecto_100_euros() -> dict:
     """Cuánto más se vende al mes por cada 100 € más de publicidad (pendiente de cada modelo)."""
-    paquete = cargar_modelo("regresion_pedidos")
-    posicion = paquete["variables"].index("inversion_total")
-    return {"pedidos": 100 * float(paquete["modelo"].coef_[posicion]),
-            "ingresos": 100 * float(modelo_ingresos().coef_[posicion])}
+    efecto = {}
+    for clave, nombre in MODELOS_S6.items():
+        paquete = cargar_modelo(nombre)
+        efecto[clave] = 100 * float(paquete["modelo"].coef_[paquete["variables"].index("inversion_total")])
+    return efecto
 
 
 # ---------------------------------------------------------------------------------------
