@@ -236,6 +236,8 @@ En la página **Clientes**, el cliente **199** (Murcia, Habituales) encabeza la 
 
 ## App interactiva (Streamlit)
 
+**App publicada:** (pendiente)
+
 Una app web para usar los modelos sin escribir código, pensada para alguien de negocio. Arrancarla desde la raíz del proyecto, con el entorno activado:
 
 ```bash
