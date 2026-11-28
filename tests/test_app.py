@@ -188,6 +188,64 @@ def test_cifras_iguales_que_los_notebooks():
         assert (app["motivo"] == sos["motivo_principal"]).all()
 
 
+# ---------------------------------------------------------------------------------------
+# 4. Seguridad: la app no muestra datos personales
+# ---------------------------------------------------------------------------------------
+
+def texto_completo(app: AppTest) -> str:
+    """Todo lo que muestra la página: textos, opciones de los selectores, métricas y tablas.
+
+    Cada elemento de la página es un mensaje protobuf (el formato con el que Streamlit envía la
+    página al navegador); se pasa a texto con as_utf8=True para que "García" no salga escapado.
+    """
+    from google.protobuf.text_format import MessageToString
+    partes = []
+
+    def recorrer(nodo):
+        if getattr(nodo, "proto", None) is not None:
+            partes.append(MessageToString(nodo.proto, as_utf8=True))
+        if type(nodo).__name__ == "Dataframe":
+            partes.append(nodo.value.to_string())
+        hijos = getattr(nodo, "children", None) or {}
+        for hijo in (hijos.values() if isinstance(hijos, dict) else hijos):
+            recorrer(hijo)
+
+    recorrer(app._tree)
+    return "\n".join(partes)
+
+
+def test_sin_datos_personales():
+    """Ningún nombre ni email de cliente aparece en ninguna página (solo id_cliente)."""
+    personales = u.leer_sql("SELECT nombre, email FROM clientes")
+    buscados = [v for v in pd.concat([personales["nombre"], personales["email"]]).dropna() if len(v) > 3]
+    paginas = ["Inicio.py", "pages/1_Simulador_publicidad.py", "pages/2_Ficha_de_cliente.py",
+               "pages/3_Pedidos_sospechosos.py"]
+    textos = [texto_completo(abrir(p)) for p in paginas]
+
+    # Ficha: el cliente inicial (199) y uno de cada acción
+    ficha = abrir("pages/2_Ficha_de_cliente.py")
+    clientes = u.clientes()
+    for accion in [u.PERDIDO, u.NO_EN_RIESGO, u.SIN_COMPRAS]:
+        ficha.selectbox[0].set_value(clientes.index[clientes["accion"] == accion][0]).run()
+        textos.append(texto_completo(ficha))
+
+    todo = "\n".join(textos)
+    assert "Cliente 199" in todo and "883.360,54" in todo   # el recorrido sí lee el contenido
+    encontrados = [v for v in buscados if v in todo]
+    assert not encontrados, f"La app muestra datos personales: {len(encontrados)} (p. ej. {encontrados[0][:3]}...)"
+
+
+def test_solo_modelos_permitidos():
+    """cargar_modelo() rechaza cualquier nombre que no sea uno de los 4 modelos de models/."""
+    for nombre in ["../data/processed/otro", "C:/Windows/algo", "recompra_knn.joblib", ""]:
+        try:
+            u.cargar_modelo(nombre)
+        except ValueError:
+            continue
+        raise AssertionError(f"cargar_modelo() aceptó {nombre!r}")
+    assert all(isinstance(u.cargar_modelo(n), dict) for n in u.MODELOS_PERMITIDOS)
+
+
 def test_formato_espanol():
     assert u.euros(883360.54) == "883.360,54 €"
     assert u.euros(1234.5, 0) == "1.234 €"   # redondeo de Python: 1234,5 -> 1234 (al par)
