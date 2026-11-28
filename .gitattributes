@@ -1,0 +1,17 @@
+# Finales de línea
+# ----------------
+# Windows termina las líneas con CRLF (\r\n) y Linux/macOS con LF (\n). Si cada persona guarda los
+# archivos con su sistema, git ve como "cambiadas" líneas que no han cambiado.
+# text=auto: git detecta qué archivos son de texto y los guarda SIEMPRE con LF en el repositorio.
+# Al sacarlos a la carpeta de trabajo, cada sistema los convierte a su final de línea habitual.
+* text=auto
+
+# Binarios
+# --------
+# "binary" = no convertir nunca los finales de línea ni intentar mostrar diferencias línea a línea.
+# Un byte 0x0D 0x0A dentro de un PNG o de un modelo no es un final de línea: si git lo cambiara,
+# el archivo quedaría corrupto.
+*.pbix   binary
+*.joblib binary
+*.png    binary
+*.db     binary
