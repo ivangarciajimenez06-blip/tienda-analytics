@@ -12,17 +12,17 @@ import pandas as pd
 from faker import Faker
 
 #Configuración
-raiz= Path(__file__).resolve().parent.parent
-carpeta_raw= raiz/ "data"/ "raw"
-semilla= 42 #misma semilla, mismos datos cada vez
-n_clientes= 500
-Fecha_inicio= pd.Timestamp("2024-11-01")
-Fecha_fin=pd.Timestamp("2026-10-31")
+RAIZ= Path(__file__).resolve().parent.parent
+CARPETA_RAW= RAIZ/ "data"/ "raw"
+SEMILLA= 42 #misma semilla, mismos datos cada vez
+N_CLIENTES= 500
+FECHA_INICIO= pd.Timestamp("2024-11-01")
+FECHA_FIN=pd.Timestamp("2026-10-31")
 fake = Faker("es_ES") #Nombres, emails, y empresas en Español
-Faker.seed(semilla)
-rng=np.random.default_rng(semilla)
+Faker.seed(SEMILLA)
+rng=np.random.default_rng(SEMILLA)
 
-Catalogo ={
+CATALOGO ={
 "Electrónica": (["Auriculares inalámbricos", "Altavoz Bluetooth", "Smartwatch",
                      "Cargador rápido", "Ratón inalámbrico"], (15, 250)),
     "Hogar": (["Lámpara de escritorio", "Juego de sartenes", "Cafetera",
@@ -36,37 +36,37 @@ Catalogo ={
     "Belleza": (["Crema hidratante", "Perfume", "Kit de maquillaje",
                  "Champú sólido", "Sérum facial"], (6, 80)),
 }
-Variantes= ["Básico", "Premium"]
+VARIANTES= ["Básico", "Premium"]
 
 #Ciudades y su peso (cuánto compran cada una)
-Ciudades= {"Madrid": 0.25, "Barcelona": 0.18, "Valencia": 0.10, "Sevilla": 0.08,
+CIUDADES= {"Madrid": 0.25, "Barcelona": 0.18, "Valencia": 0.10, "Sevilla": 0.08,
             "Zaragoza": 0.06, "Málaga": 0.06, "Bilbao": 0.05, "Murcia": 0.05,
             "Alicante": 0.05, "Valladolid": 0.04, "Granada": 0.04, "A Coruña": 0.04 }
-Tipos_Cliente={"fiel": 0.15, "ocasional": 0.50, "puntual": 0.35}
+TIPOS_CLIENTE={"fiel": 0.15, "ocasional": 0.50, "puntual": 0.35}
 
 #Campañas: canal y rango de inversión en €
-Canales={"google_ads": (800,3000), "meta_ads": (500,2500), "email": (100,400)}
+CANALES={"google_ads": (800,3000), "meta_ads": (500,2500), "email": (100,400)}
 
 #Multiplicador por mes del año: noviembre y diciembre venden más
-Estacionalidad= {1: 0.9, 2: 0.8, 3: 0.9, 4: 0.95, 5: 1.0, 6: 0.95,
+ESTACIONALIDAD= {1: 0.9, 2: 0.8, 3: 0.9, 4: 0.95, 5: 1.0, 6: 0.95,
                   7: 0.85, 8: 0.75, 9: 1.0, 10: 1.05, 11: 1.4, 12: 1.5}
 
 #Pedidos de cada mes= base x estacionalidad + efecto de la publicidad + ruido
-Pedidos_base= 150
-Pedidos_por_euro= 0.05 # cada 100€ de publicidad trae unos 5 pedidos más
-Ruido_pedidos=25 # desviación típica del ruido
+PEDIDOS_BASE= 150
+PEDIDOS_POR_EURO= 0.05 # cada 100€ de publicidad trae unos 5 pedidos más
+RUIDO_PEDIDOS=25 # desviación típica del ruido
 
 #Cuánto "tira" cada tipo de cliente a la hora de comprar
-Peso_tipo={"fiel": 4.0, "ocasional": 1.0, "puntual": 3.0}
-Peso_puntual_despues= 0.03
-Estados= {"completado": 0.90, "cancelado": 0.05, "devuelto": 0.05}
-Metodos_pago={"tarjeta": 0.55, "paypal": 0.20, "bizum": 0.20, "transferencia": 0.05}
+PESO_TIPO={"fiel": 4.0, "ocasional": 1.0, "puntual": 3.0}
+PESO_PUNTUAL_DESPUES= 0.03
+ESTADOS= {"completado": 0.90, "cancelado": 0.05, "devuelto": 0.05}
+METODOS_PAGO={"tarjeta": 0.55, "paypal": 0.20, "bizum": 0.20, "transferencia": 0.05}
 
 #Generadores
 def generar_categorias()  -> pd.DataFrame:
     return pd.DataFrame({
-        "id_categoria": range(1, len(Catalogo) + 1),
-        "nombre": list(Catalogo.keys()),
+        "id_categoria": range(1, len(CATALOGO) + 1),
+        "nombre": list(CATALOGO.keys()),
     })
 def generar_proveedores(n:int = 8) -> pd.DataFrame:
     paises= rng.choice(["España", "Portugal", "Francia", "China"], size=n,
@@ -80,9 +80,9 @@ def generar_proveedores(n:int = 8) -> pd.DataFrame:
 def generar_productos(categorias: pd.DataFrame, proveedores: pd.DataFrame) -> pd.DataFrame:
     filas=[]
     for id_cat, nombre_cat in zip(categorias["id_categoria"], categorias["nombre"]):
-        productos_base,(pmin, pmax)= Catalogo[nombre_cat]
+        productos_base,(pmin, pmax)= CATALOGO[nombre_cat]
         for base in productos_base:
-            for variante in Variantes:
+            for variante in VARIANTES:
                 precio= rng.uniform(pmin, pmax /2)
                 if variante =="Premium":
                     precio *= rng.uniform(1.6, 2.0) # el premium es más caro
@@ -97,28 +97,28 @@ def generar_productos(categorias: pd.DataFrame, proveedores: pd.DataFrame) -> pd
     prductos= pd.DataFrame(filas)
     prductos.insert(0, "id_producto", range(1, len(filas) + 1))
     return prductos
-def generar_clientes(n:int= n_clientes) -> tuple[pd.DataFrame, pd.DataFrame]:
+def generar_clientes(n:int= N_CLIENTES) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Devuelve (clientes, verdad): verdad guarda el tipo oculto de cada cliente. """
-    dias_totales= (Fecha_fin - Fecha_inicio).days
+    dias_totales= (FECHA_FIN - FECHA_INICIO).days
     dias_alta= (rng.beta(1.2, 2.0, size=n) * dias_totales).astype(int)
 
     clientes= pd.DataFrame({
         "id_cliente": range(1, n + 1),
         "nombre": [fake.name() for _ in range(n)],
         "email": [fake.unique.free_email() for _ in range(n)],
-        "ciudad": rng.choice(list(Ciudades), size=n, p=list(Ciudades.values())),
-        "fecha_alta": (Fecha_inicio + pd.to_timedelta(dias_alta, unit="D")).strftime("%Y-%m-%d"),
+        "ciudad": rng.choice(list(CIUDADES), size=n, p=list(CIUDADES.values())),
+        "fecha_alta": (FECHA_INICIO + pd.to_timedelta(dias_alta, unit="D")).strftime("%Y-%m-%d"),
     })
     verdad= pd.DataFrame({
         "id_cliente": clientes["id_cliente"],
-        "tipo_real": rng.choice(list(Tipos_Cliente), size=n, p=list(Tipos_Cliente.values())),
+        "tipo_real": rng.choice(list(TIPOS_CLIENTE), size=n, p=list(TIPOS_CLIENTE.values())),
     })
     return clientes, verdad
 def generar_campanas() -> pd.DataFrame:
     filas= []
-    for mes in pd.period_range(Fecha_inicio, Fecha_fin, freq= "M"):
-        for canal, (minimo, maximo) in Canales.items():
-            inversion= rng.uniform(minimo, maximo) * Estacionalidad[mes.month] ** 0.5
+    for mes in pd.period_range(FECHA_INICIO, FECHA_FIN, freq= "M"):
+        for canal, (minimo, maximo) in CANALES.items():
+            inversion= rng.uniform(minimo, maximo) * ESTACIONALIDAD[mes.month] ** 0.5
             filas.append({"mes": str(mes), "canal": canal, "inversion": round(inversion, 2)})
     campanas= pd.DataFrame(filas)
     campanas.insert(0, "id_campana", range(1, len(filas) + 1))
@@ -126,7 +126,7 @@ def generar_campanas() -> pd.DataFrame:
 def generar_pedidos(clientes: pd.DataFrame, verdad:pd.DataFrame, campanas: pd.DataFrame) -> pd.DataFrame:
     alta= pd.to_datetime(clientes["fecha_alta"]).to_numpy()
     tipo= verdad["tipo_real"].to_numpy()
-    peso_base= np.array([Peso_tipo[t] for t in tipo])
+    peso_base= np.array([PESO_TIPO[t] for t in tipo])
     inversion_mes= campanas.groupby("mes")["inversion"].sum()
     filas= []
 
@@ -135,14 +135,14 @@ def generar_pedidos(clientes: pd.DataFrame, verdad:pd.DataFrame, campanas: pd.Da
         inicio, fin= periodo.start_time, periodo.end_time.normalize()
 
         # 1) Cuántos pedidos hay este mes: aquí está la relación que buscará la regresión
-        n= Pedidos_base * Estacionalidad[periodo.month] + Pedidos_por_euro * inversion
-        n= max(int(round(n + rng.normal(0, Ruido_pedidos))), 0)
+        n= PEDIDOS_BASE * ESTACIONALIDAD[periodo.month] + PEDIDOS_POR_EURO * inversion
+        n= max(int(round(n + rng.normal(0, RUIDO_PEDIDOS))), 0)
 
         # 2) Quién compra: solo clientes ya dados de alta, con más peso para los fieles
         activos= alta <= fin.to_datetime64()
         pesos= peso_base.copy()
         dias_desde_alta= (fin - pd.to_datetime(alta)).days.to_numpy()
-        pesos[(tipo== "puntual") & (dias_desde_alta > 31 )]= Peso_puntual_despues
+        pesos[(tipo== "puntual") & (dias_desde_alta > 31 )]= PESO_PUNTUAL_DESPUES
         pesos[~activos]= 0
         compradores= rng.choice(clientes["id_cliente"], size=n, p=pesos/ pesos.sum())
 
@@ -155,23 +155,23 @@ def generar_pedidos(clientes: pd.DataFrame, verdad:pd.DataFrame, campanas: pd.Da
     # 4) Ordenar por fecha y numerar: así id_pedido crece con el tiempo, como en una tienda real
     pedidos= pd.DataFrame(filas).sort_values("fecha_pedido", kind="stable").reset_index(drop=True)
     pedidos.insert(0, "id_pedido", range(1, len(pedidos) + 1))
-    pedidos["estado"]= rng.choice(list(Estados), size=len(pedidos), p=list(Estados.values()))
-    pedidos["metodo_pago"]= rng.choice(list(Metodos_pago), size=len(pedidos), p=list(Metodos_pago.values()))
+    pedidos["estado"]= rng.choice(list(ESTADOS), size=len(pedidos), p=list(ESTADOS.values()))
+    pedidos["metodo_pago"]= rng.choice(list(METODOS_PAGO), size=len(pedidos), p=list(METODOS_PAGO.values()))
     return pedidos
 
 #Líneas por pedido y unidades por línea en un pedido normal
-Lineas_por_pedido= {1: 0.60, 2: 0.25, 3: 0.10, 4: 0.05}
-Unidades_por_linea= {1: 0.60, 2: 0.25, 3: 0.10, 4: 0.03, 5: 0.02}
+LINEAS_POR_PEDIDO= {1: 0.60, 2: 0.25, 3: 0.10, 4: 0.05}
+UNIDADES_POR_LINEA= {1: 0.60, 2: 0.25, 3: 0.10, 4: 0.03, 5: 0.02}
 
 def generar_detalle(pedidos: pd.DataFrame, productos: pd.DataFrame) -> pd.DataFrame:
     """Crea las líneas de cada pedido: qué productos, cuántas unidades y a qué precio."""
     precio_de= productos.set_index("id_producto")["precio"]
-    n_lineas= rng.choice(list(Lineas_por_pedido), size=len(pedidos), p=list(Lineas_por_pedido.values()))
+    n_lineas= rng.choice(list(LINEAS_POR_PEDIDO), size=len(pedidos), p=list(LINEAS_POR_PEDIDO.values()))
     filas= []
     for id_pedido, n in zip(pedidos["id_pedido"], n_lineas):
         # replace=False: un producto no se repite dentro del mismo pedido (es la clave primaria)
         elegidos= rng.choice(productos["id_producto"], size=n, replace=False)
-        cantidades= rng.choice(list(Unidades_por_linea), size=n, p=list(Unidades_por_linea.values()))
+        cantidades= rng.choice(list(UNIDADES_POR_LINEA), size=n, p=list(UNIDADES_POR_LINEA.values()))
         for id_producto, cantidad in zip(elegidos, cantidades):
             filas.append({
                 "id_pedido": int(id_pedido),
@@ -184,8 +184,8 @@ def generar_detalle(pedidos: pd.DataFrame, productos: pd.DataFrame) -> pd.DataFr
 # ---------------------------------------------------------------
 # Paso 3a: anomalías (pedidos válidos pero raros, para Isolation Forest)
 # ---------------------------------------------------------------
-Porcentaje_anomalias= 0.01
-Tipos_anomalia= ["cantidad_enorme", "precio_anomalo", "muchas_lineas"]
+PORCENTAJE_ANOMALIAS= 0.01
+TIPOS_ANOMALIA= ["cantidad_enorme", "precio_anomalo", "muchas_lineas"]
 
 def plantar_anomalias(pedidos: pd.DataFrame, detalle: pd.DataFrame,
                       productos: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -196,9 +196,9 @@ def plantar_anomalias(pedidos: pd.DataFrame, detalle: pd.DataFrame,
     """
     detalle= detalle.copy()
     precio_de= productos.set_index("id_producto")["precio"]
-    n= round(len(pedidos) * Porcentaje_anomalias)
+    n= round(len(pedidos) * PORCENTAJE_ANOMALIAS)
     elegidos= rng.choice(pedidos["id_pedido"], size=n, replace=False)
-    tipos= rng.choice(Tipos_anomalia, size=n)
+    tipos= rng.choice(TIPOS_ANOMALIA, size=n)
     nuevas_lineas= []
 
     for id_pedido, tipo in zip(elegidos, tipos):
@@ -223,7 +223,7 @@ def plantar_anomalias(pedidos: pd.DataFrame, detalle: pd.DataFrame,
                 nuevas_lineas.append({
                     "id_pedido": int(id_pedido),
                     "id_producto": int(id_producto),
-                    "cantidad": int(rng.choice(list(Unidades_por_linea), p=list(Unidades_por_linea.values()))),
+                    "cantidad": int(rng.choice(list(UNIDADES_POR_LINEA), p=list(UNIDADES_POR_LINEA.values()))),
                     "precio_unitario": float(precio_de[id_producto]),
                 })
 
@@ -238,7 +238,7 @@ def plantar_anomalias(pedidos: pd.DataFrame, detalle: pd.DataFrame,
 # Paso 3b: suciedad (errores típicos de un sistema mal mantenido)
 # ---------------------------------------------------------------
 # Cada tipo de problema afecta a entre el 1 % y el 3 % de las filas.
-Suciedad_min, Suciedad_max= 0.01, 0.03
+SUCIEDAD_MIN, SUCIEDAD_MAX= 0.01, 0.03
 
 def elegir_filas(candidatas, usadas: set) -> list:
     """Elige entre el 1 % y el 3 % de las filas candidatas que aún no tengan otro problema.
@@ -247,7 +247,7 @@ def elegir_filas(candidatas, usadas: set) -> list:
     y arreglar por separado en la limpieza.
     """
     libres= [i for i in candidatas if i not in usadas]
-    n= round(len(candidatas) * rng.uniform(Suciedad_min, Suciedad_max))
+    n= round(len(candidatas) * rng.uniform(SUCIEDAD_MIN, SUCIEDAD_MAX))
     elegidas= sorted(rng.choice(libres, size=n, replace=False).tolist())
     usadas.update(elegidas)
     return elegidas
@@ -286,7 +286,7 @@ def ensuciar_clientes(clientes: pd.DataFrame, protegidos: set) -> pd.DataFrame:
 
     return duplicar_filas(df, usadas)
 
-Variantes_estado= {"completado": [" Completado", "COMPLETADO", "completado "],
+VARIANTES_ESTADO= {"completado": [" Completado", "COMPLETADO", "completado "],
                    "cancelado": [" Cancelado", "CANCELADO"],
                    "devuelto": ["DEVUELTO ", " Devuelto"]}
 
@@ -309,7 +309,7 @@ def ensuciar_pedidos(pedidos: pd.DataFrame, protegidos: set) -> pd.DataFrame:
     df.loc[filas, "fecha_pedido"]= fecha_formato_europeo(df.loc[filas, "fecha_pedido"])
     filas= elegir_filas(df.index, usadas)
     # El estado mal escrito sigue siendo el mismo estado (solo cambian mayúsculas y espacios)
-    df.loc[filas, "estado"]= [rng.choice(Variantes_estado[e]) for e in df.loc[filas, "estado"]]
+    df.loc[filas, "estado"]= [rng.choice(VARIANTES_ESTADO[e]) for e in df.loc[filas, "estado"]]
 
     return duplicar_filas(df, usadas)
 
@@ -335,13 +335,13 @@ def ensuciar_detalle(detalle: pd.DataFrame) -> pd.DataFrame:
 
 #Programa principal
 def guardar(df: pd.DataFrame, nombre: str) -> None:
-    ruta= carpeta_raw / f"{nombre}.csv"
+    ruta= CARPETA_RAW / f"{nombre}.csv"
     df.to_csv(ruta, index=False, encoding="utf-8")
     print(f" {nombre:<20} {len(df):>6} filas -> {ruta.name}")
 
 def main() -> None:
-    carpeta_raw.mkdir(parents=True, exist_ok=True)
-    print("Generando datos en", carpeta_raw)
+    CARPETA_RAW.mkdir(parents=True, exist_ok=True)
+    print("Generando datos en", CARPETA_RAW)
 
     categorias= generar_categorias()
     proveedores= generar_proveedores()

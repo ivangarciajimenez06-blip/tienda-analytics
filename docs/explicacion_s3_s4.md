@@ -17,7 +17,7 @@ Qué se cambió (commit `fix: completar la generación...`):
 
 - `generar_pedidos()` ahora ordena los pedidos por fecha y los numera (`id_pedido` 1, 2, 3...,
   así un número mayor significa un pedido más reciente). Después elige `estado` y `metodo_pago`
-  con las probabilidades que ya estaban en `Estados` y `Metodos_pago`.
+  con las probabilidades que ya estaban en `ESTADOS` y `METODOS_PAGO`.
 - Nueva `generar_detalle()`: cada pedido tiene de 1 a 4 líneas (lo más habitual es 1).
   Cada línea tiene de 1 a 5 unidades y se vende al precio de catálogo. Dentro de un pedido no se
   repite producto (`replace=False`), porque `(id_pedido, id_producto)` es la clave primaria.
@@ -236,6 +236,6 @@ SELECT COUNT(*) FROM clientes WHERE date(fecha_alta)   IS NOT fecha_alta;
 9. **Duplicados de clave no exactos** (mismo `id_pedido` o mismo email con datos distintos):
    se conserva la primera fila. En estos datos hay 0, pero la comprobación queda por si acaso.
 10. **Nombres en mayúsculas**: en `limpieza.py` uso `RAIZ`, `RUTA_BD`... como pide la regla.
-    `crear_bd.py` y `generar_datos.py` usan `raiz` en minúscula y no los he cambiado para no
-    tocar código que ya funciona.
+    `crear_bd.py` y `generar_datos.py` usaban `raiz` en minúscula; en la S11 se renombraron todas
+    sus constantes a mayúsculas (PEP 8), comprobando que los CSV generados no cambian.
 11. **`schema.sql` no se ha modificado.**

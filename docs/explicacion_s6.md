@@ -238,10 +238,10 @@ precauciones:
 
 ## 10. Validación del método (posible solo porque los datos son simulados)
 
-El generador usa `Pedidos_por_euro = 0.05`.
+El generador usa `PEDIDOS_POR_EURO = 0.05`.
 
-> Nota: en el código la constante se llama `Pedidos_por_euro`, no `PEDIDOS_POR_EURO`. No la he
-> renombrado para no tocar el generador.
+> Nota: hasta la S11 la constante se llamaba `Pedidos_por_euro`. En la S11 se renombró a
+> `PEDIDOS_POR_EURO` (PEP 8) sin cambiar los datos generados.
 
 Ese 0,05 se aplica a todos los pedidos generados, y nosotros contamos solo los completados que
 sobreviven a la limpieza. Por eso el valor esperado es **0,05 × 0,924 × 0,896 = 0,0414**. M2
