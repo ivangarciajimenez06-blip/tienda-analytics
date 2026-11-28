@@ -228,3 +228,9 @@ __marimo__/
 data/raw/*
 data/processed/*
 !data/**/.gitkeep
+
+# Seguridad: secretos y configuración local (S11). Algunas ya estaban más arriba en la plantilla;
+# se repiten aquí para que quede claro, en un solo sitio, qué nunca debe subirse.
+.env
+.streamlit/secrets.toml
+*.local.*
