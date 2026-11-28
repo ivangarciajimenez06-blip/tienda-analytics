@@ -114,9 +114,17 @@ def asegurar_datos() -> bool:
     return True
 
 
+# Los únicos modelos que la app puede cargar. Cargar un .joblib ejecuta código (ver la sección
+# "Seguridad" de docs/explicacion_s11.md), así que solo se aceptan estos nombres fijos: nunca una
+# ruta que venga del usuario, de la URL o de un archivo subido.
+MODELOS_PERMITIDOS = ("regresion_pedidos", "segmentacion_kmeans", "anomalias_iforest", "recompra_knn")
+
+
 @st.cache_resource
 def cargar_modelo(nombre: str) -> dict:
     """Carga models/<nombre>.joblib (un diccionario con el modelo y sus datos) una sola vez."""
+    if nombre not in MODELOS_PERMITIDOS:
+        raise ValueError(f"Modelo no permitido: {nombre!r}. Solo se cargan {MODELOS_PERMITIDOS}.")
     return joblib.load(CARPETA_MODELOS / f"{nombre}.joblib")
 
 
