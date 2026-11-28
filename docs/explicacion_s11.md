@@ -311,15 +311,41 @@ capturas se hicieron con Playwright, instalado aparte, porque no es una dependen
     desplazamiento horizontal. En ventanas muy estrechas (unos 1.000 px con la barra lateral
     abierta) sobran unos 50 px. El importe lleva un espacio de no separación antes del "€" para
     que no se parta en dos líneas.
-12. **`anomalias_iforest.joblib` no se ha vuelto a subir.** Al re-ejecutar el notebook 04 para la
-    verificación, el archivo sale con otro hash que el del repositorio, aunque el contenido es el
+12. **`anomalias_iforest.joblib` se guarda siempre con los mismos bytes.** Al re-ejecutar el
+    notebook 04, el archivo salía con otro hash que el del repositorio, aunque el contenido era el
     mismo: puntuaciones idénticas en todos los pedidos, mismos árboles, mismo umbral y mismos valores
-    en `referencia_motivo`. Los bytes cambian porque pickle guarda una cadena una sola vez si es *el
-    mismo objeto* en memoria, y ahora los nombres de las 7 variables se guardan dos veces (en
-    `mediana` y en `escala`). Es una diferencia de codificación, no de modelo. El hash nuevo es
-    estable entre ejecuciones. Como subirlo sería un cambio binario sin cambio real, se dejó la
-    versión del repositorio, igual que las salidas de los notebooks 01, 03 y 04, que solo cambiaban
-    en las marcas de tiempo.
+    en `referencia_motivo`.
+    - **Causa:** las claves de los diccionarios `mediana` y `escala` de `referencia_motivo` salían
+      del índice de pandas (`serie.to_dict()`). Pickle guarda una cadena **una sola vez** si es *el
+      mismo objeto* en memoria y, si no, la repite. Según cómo pandas comparte o copia ese índice,
+      los 7 nombres de variable se guardaban una vez o dos: mismo contenido, distintos bytes.
+    - **Arreglo:** las claves son ahora las cadenas de la lista `VARIABLES`
+      (`{v: float(serie.round(10)[v]) for v in VARIABLES}`), la misma lista que ya va en el paquete
+      como `"variables"`. Así pickle siempre las escribe una vez y luego solo las referencia, haga
+      lo que haga pandas por dentro.
+    - **Comprobado:** mismo hash SHA-256 en dos ejecuciones completas del notebook. Comparado con la
+      versión anterior: `referencia_motivo` y las demás claves son iguales, y las puntuaciones son
+      idénticas. Como el archivo cambia de bytes una vez (es la nueva forma de guardarlo), se subió
+      en un commit propio. Las salidas de los notebooks 01 y 03, que solo cambiaban en las marcas de
+      tiempo, no se subieron.
+13. **Motivo sin frases repetidas.** En un pedido de **una sola línea**, el precio más alto y el más
+    bajo respecto al catálogo (`ratio_precio_max` y `ratio_precio_min`) son el mismo, y el motivo
+    decía dos veces lo mismo: "Precio por debajo del catálogo (×0,18) · Precio por debajo del
+    catálogo (×0,18) · ...". Ahora se aplica la misma regla que ya existía para las unidades: si los
+    dos ratios valen lo mismo, se muestra uno y entra la siguiente variable más extrema (si cumple
+    la regla de la 3.ª variable, desviación de 2 o más). Se cambió en el notebook 04 y en la copia de
+    la función de `app/utilidades.py`.
+    - **Cambian 8 de los 121 motivos.** En 5 entra una 3.ª variable (por ejemplo, el pedido 6706:
+      "Precio por encima del catálogo (×8,64) · Importe por unidad alto: 573 € · Importe alto:
+      1.146 €"). En 3, la siguiente variable no es tan extrema y el motivo se queda en 2.
+    - **No cambia nada más:** comparado con el CSV anterior, `id_pedido`, `puntuacion`, `ranking` y
+      `marcado` son idénticos en los 7.000+ pedidos; solo cambia `motivo_principal`. Ya no hay
+      ningún motivo con una frase repetida, y la app da los mismos 121 motivos que el CSV.
+    - Se volvieron a generar `pedidos_sospechosos.csv` (notebook 04) y los CSV de Power BI
+      (`src/exportar_powerbi.py`): sus 6 comprobaciones dan OK y solo cambia `fact_alertas.csv`, en
+      esas 8 filas. El reparto del notebook pasa de 64 motivos con 2 variables y 57 con 3 a **67 y
+      54**; se actualizó el texto del notebook y `docs/explicacion_s8.md`. El `.pbix` no se ha
+      tocado: al pulsar *Actualizar* en Power BI, leerá los motivos nuevos.
 
 ## 6. Seguridad (antes de publicar la app)
 
