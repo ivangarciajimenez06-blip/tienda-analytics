@@ -1,8 +1,22 @@
-pandas
-numpy
-faker
-matplotlib
-seaborn
-scikit-learn
-joblib
-jupyter
+# Versiones fijas (==): las que hay instaladas en el .venv con el que se generaron los datos,
+# se entrenaron los modelos de models/ y se probó la app. Ver docs/explicacion_s11.md.
+# Solo se fijan las librerías que el proyecto importa directamente; pip elige las demás.
+
+# Datos y modelos
+numpy==2.5.4
+pandas==3.1.0
+scipy==1.18.1
+scikit-learn==1.9.1
+joblib==1.6.0
+Faker==40.44.0
+
+# Gráficos de los notebooks
+matplotlib==3.11.2
+seaborn==0.13.2
+
+# Notebooks
+jupyter==1.1.1
+
+# App (Altair viene con Streamlit, pero la app lo importa directamente)
+streamlit==1.67.0
+altair==6.3.0
