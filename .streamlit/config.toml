@@ -1,0 +1,10 @@
+# Configuración de la app de Streamlit (se lee al ejecutar `streamlit run` desde la raíz del proyecto)
+
+[theme]
+# Azul como color principal (controles, botones), el mismo de los gráficos de los notebooks.
+# El rojo queda reservado para lo que es una alerta (pedidos sospechosos).
+primaryColor = "#2a78d6"
+
+[browser]
+# No enviar estadísticas de uso a Streamlit
+gatherUsageStats = false
