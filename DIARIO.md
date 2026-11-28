@@ -127,8 +127,10 @@
   - `CALCULATE` cambia el contexto de filtro de una medida (por ejemplo, solo pedidos completados), y `ALL` quita los filtros de una tabla o columna para comparar con el total.
   - Hay que quitar el Σ a columnas como el año, el mes o los `id_*`: son números, pero no tiene sentido sumarlos.
   - El valor está en cruzar páginas: el cliente 199 es el recuperable con más gasto histórico (11.026,56 €), pero su pedido 6477 de 10.389,60 € es el nº 2 de las alertas. Sin ese pedido habría gastado 636,96 €, así que hay que revisarlo antes de meterlo en la campaña.
+  - CALCULATE y ALL: en % clientes y % ingresos, ALL(dim_cliente) quita el filtro del segmento para dividir entre el total de todos los clientes. Así salió que los Fieles son el 26,8 % de los clientes y generan el 66,4 % de los ingresos.
 - Problemas y cómo los resolví:
   - pandas no estaba instalado en el `.venv`. Lo arreglé con `pip install -r requirements.txt`.
   - Sincronicé las segmentaciones entre páginas sin querer y un filtro de una página cambiaba las otras.
   - El filtro N superior no estaba disponible en columnas numéricas. Lo resolví ordenando la tabla de recuperables por gasto.
   - Los números salían abreviados en "mil" y los porcentajes como decimales. Lo arreglé con el formato de cada medida (moneda y porcentaje).
+  - Al copiar las segmentaciones a la página Clientes pulsé "Sincronizar" sin querer. Lo resolví borrando las copias, desmarcando la página Clientes en Vista → Sincronizar segmentaciones y volviendo a pegarlas con "No sincronizar".
