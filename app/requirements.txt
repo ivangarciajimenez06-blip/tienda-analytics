@@ -1,0 +1,19 @@
+# Dependencias de la app de Streamlit (las que usa Streamlit Community Cloud).
+# Solo lo que importan app/ y src/ al ejecutar la app; sin Jupyter ni librerías de gráficos de los
+# notebooks. Las versiones son las mismas que fija el requirements.txt de la raíz.
+
+streamlit==1.67.0
+# Altair viene con Streamlit, pero la app lo importa directamente
+altair==6.3.0
+
+numpy==2.5.4
+pandas==3.1.0
+# Tiene que ser la misma versión con la que se guardaron los .joblib de models/ (1.9.1)
+scikit-learn==1.9.1
+# scipy no se importa directamente, pero scikit-learn lo usa; se fija para que los modelos se
+# comporten igual que en el .venv donde se entrenaron
+scipy==1.18.1
+joblib==1.6.0
+
+# Solo hace falta si no existe tienda.db y la app tiene que generar los datos (siempre, en la nube)
+Faker==40.44.0
