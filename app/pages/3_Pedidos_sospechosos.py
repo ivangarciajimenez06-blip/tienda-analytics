@@ -76,13 +76,16 @@ tabla = pd.DataFrame({
     "Puntuación": marcados["puntuacion"],
     "Importe": marcados["importe_total"],
 })
-st.dataframe(
-    tabla.style.format({"Fecha": u.fecha, "Puntuación": lambda v: u.numero(v, 3), "Importe": u.euros}),
-    hide_index=True, width="stretch", height=420,
-    # El motivo es lo que más interesa leer: las columnas de números se estrechan para dejarle sitio
-    column_config={"Motivo": st.column_config.TextColumn(width=560),
-                   **{c: st.column_config.Column(width="small")
-                      for c in ["Ranking", "Pedido", "Cliente", "Puntuación"]}},
-)
+# El motivo es lo que más interesa leer y llega a ~130 caracteres. En st.dataframe (Streamlit 1.67)
+# el texto de una celda no se parte en varias líneas: se corta o obliga a desplazar la tabla en
+# horizontal. st.table es una tabla HTML normal, que sí parte el texto. Para que las 121 filas no
+# alarguen la página, va dentro de un contenedor de altura fija con desplazamiento vertical.
+with st.container(height=460):
+    st.table(
+        # Espacio de no separación antes del "€" para que el importe no se parta en dos líneas
+        tabla.style.format({"Fecha": u.fecha, "Puntuación": lambda v: u.numero(v, 3),
+                            "Importe": lambda v: u.euros(v).replace(" ", "\u00a0")}),
+        hide_index=True,
+    )
 st.caption("El ranking ordena todos los pedidos de la tienda por su puntuación (1 = el más raro). "
            "El motivo indica las 2 o 3 características más alejadas de un pedido normal.")

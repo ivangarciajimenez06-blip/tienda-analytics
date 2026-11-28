@@ -137,8 +137,8 @@ def test_ficha_otros_clientes():
 def test_pedidos_sospechosos():
     app = abrir("pages/3_Pedidos_sospechosos.py")
     assert metricas(app)["Pedidos marcados"] == "121"
-    assert len(app.dataframe[0].value) == 121
-    assert app.dataframe[0].value.iloc[0]["Pedido"] == 348  # el nº 1 del ranking
+    assert len(app.table[0].value) == 121
+    assert app.table[0].value.iloc[0]["Pedido"] == 348  # el nº 1 del ranking
 
     # Filtros: solo 2026 y solo Fieles
     app.multiselect[0].set_value([2026]).run()
@@ -204,7 +204,7 @@ def texto_completo(app: AppTest) -> str:
     def recorrer(nodo):
         if getattr(nodo, "proto", None) is not None:
             partes.append(MessageToString(nodo.proto, as_utf8=True))
-        if type(nodo).__name__ == "Dataframe":
+        if type(nodo).__name__ in ("Dataframe", "Table"):
             partes.append(nodo.value.to_string())
         hijos = getattr(nodo, "children", None) or {}
         for hijo in (hijos.values() if isinstance(hijos, dict) else hijos):
